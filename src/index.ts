@@ -19,9 +19,10 @@ import {
   ScanCommand,
 } from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
+import { z } from "zod";
 
 // AWS client initialization
-const credentials: { 
+const credentials: {
   accessKeyId: string;
   secretAccessKey: string;
   sessionToken?: string;
@@ -47,14 +48,40 @@ const CREATE_TABLE_TOOL: Tool = {
     type: "object",
     properties: {
       tableName: { type: "string", description: "Name of the table to create" },
-      partitionKey: { type: "string", description: "Name of the partition key" },
-      partitionKeyType: { type: "string", enum: ["S", "N", "B"], description: "Type of partition key (S=String, N=Number, B=Binary)" },
-      sortKey: { type: "string", description: "Name of the sort key (optional)" },
-      sortKeyType: { type: "string", enum: ["S", "N", "B"], description: "Type of sort key (optional)" },
-      readCapacity: { type: "number", description: "Provisioned read capacity units" },
-      writeCapacity: { type: "number", description: "Provisioned write capacity units" },
+      partitionKey: {
+        type: "string",
+        description: "Name of the partition key",
+      },
+      partitionKeyType: {
+        type: "string",
+        enum: ["S", "N", "B"],
+        description: "Type of partition key (S=String, N=Number, B=Binary)",
+      },
+      sortKey: {
+        type: "string",
+        description: "Name of the sort key (optional)",
+      },
+      sortKeyType: {
+        type: "string",
+        enum: ["S", "N", "B"],
+        description: "Type of sort key (optional)",
+      },
+      readCapacity: {
+        type: "number",
+        description: "Provisioned read capacity units",
+      },
+      writeCapacity: {
+        type: "number",
+        description: "Provisioned write capacity units",
+      },
     },
-    required: ["tableName", "partitionKey", "partitionKeyType", "readCapacity", "writeCapacity"],
+    required: [
+      "tableName",
+      "partitionKey",
+      "partitionKeyType",
+      "readCapacity",
+      "writeCapacity",
+    ],
   },
 };
 
@@ -64,8 +91,15 @@ const LIST_TABLES_TOOL: Tool = {
   inputSchema: {
     type: "object",
     properties: {
-      limit: { type: "number", description: "Maximum number of tables to return (optional)" },
-      exclusiveStartTableName: { type: "string", description: "Name of the table to start from for pagination (optional)" },
+      limit: {
+        type: "number",
+        description: "Maximum number of tables to return (optional)",
+      },
+      exclusiveStartTableName: {
+        type: "string",
+        description:
+          "Name of the table to start from for pagination (optional)",
+      },
     },
   },
 };
@@ -78,16 +112,52 @@ const CREATE_GSI_TOOL: Tool = {
     properties: {
       tableName: { type: "string", description: "Name of the table" },
       indexName: { type: "string", description: "Name of the new index" },
-      partitionKey: { type: "string", description: "Partition key for the index" },
-      partitionKeyType: { type: "string", enum: ["S", "N", "B"], description: "Type of partition key" },
-      sortKey: { type: "string", description: "Sort key for the index (optional)" },
-      sortKeyType: { type: "string", enum: ["S", "N", "B"], description: "Type of sort key (optional)" },
-      projectionType: { type: "string", enum: ["ALL", "KEYS_ONLY", "INCLUDE"], description: "Type of projection" },
-      nonKeyAttributes: { type: "array", items: { type: "string" }, description: "Non-key attributes to project (optional)" },
-      readCapacity: { type: "number", description: "Provisioned read capacity units" },
-      writeCapacity: { type: "number", description: "Provisioned write capacity units" },
+      partitionKey: {
+        type: "string",
+        description: "Partition key for the index",
+      },
+      partitionKeyType: {
+        type: "string",
+        enum: ["S", "N", "B"],
+        description: "Type of partition key",
+      },
+      sortKey: {
+        type: "string",
+        description: "Sort key for the index (optional)",
+      },
+      sortKeyType: {
+        type: "string",
+        enum: ["S", "N", "B"],
+        description: "Type of sort key (optional)",
+      },
+      projectionType: {
+        type: "string",
+        enum: ["ALL", "KEYS_ONLY", "INCLUDE"],
+        description: "Type of projection",
+      },
+      nonKeyAttributes: {
+        type: "array",
+        items: { type: "string" },
+        description: "Non-key attributes to project (optional)",
+      },
+      readCapacity: {
+        type: "number",
+        description: "Provisioned read capacity units",
+      },
+      writeCapacity: {
+        type: "number",
+        description: "Provisioned write capacity units",
+      },
     },
-    required: ["tableName", "indexName", "partitionKey", "partitionKeyType", "projectionType", "readCapacity", "writeCapacity"],
+    required: [
+      "tableName",
+      "indexName",
+      "partitionKey",
+      "partitionKeyType",
+      "projectionType",
+      "readCapacity",
+      "writeCapacity",
+    ],
   },
 };
 
@@ -100,7 +170,10 @@ const UPDATE_GSI_TOOL: Tool = {
       tableName: { type: "string", description: "Name of the table" },
       indexName: { type: "string", description: "Name of the index to update" },
       readCapacity: { type: "number", description: "New read capacity units" },
-      writeCapacity: { type: "number", description: "New write capacity units" },
+      writeCapacity: {
+        type: "number",
+        description: "New write capacity units",
+      },
     },
     required: ["tableName", "indexName", "readCapacity", "writeCapacity"],
   },
@@ -108,22 +181,56 @@ const UPDATE_GSI_TOOL: Tool = {
 
 const CREATE_LSI_TOOL: Tool = {
   name: "create_lsi",
-  description: "Creates a local secondary index on a table (must be done during table creation)",
+  description:
+    "Creates a local secondary index on a table (must be done during table creation)",
   inputSchema: {
     type: "object",
     properties: {
       tableName: { type: "string", description: "Name of the table" },
       indexName: { type: "string", description: "Name of the new index" },
-      partitionKey: { type: "string", description: "Partition key for the table" },
-      partitionKeyType: { type: "string", enum: ["S", "N", "B"], description: "Type of partition key" },
+      partitionKey: {
+        type: "string",
+        description: "Partition key for the table",
+      },
+      partitionKeyType: {
+        type: "string",
+        enum: ["S", "N", "B"],
+        description: "Type of partition key",
+      },
       sortKey: { type: "string", description: "Sort key for the index" },
-      sortKeyType: { type: "string", enum: ["S", "N", "B"], description: "Type of sort key" },
-      projectionType: { type: "string", enum: ["ALL", "KEYS_ONLY", "INCLUDE"], description: "Type of projection" },
-      nonKeyAttributes: { type: "array", items: { type: "string" }, description: "Non-key attributes to project (optional)" },
-      readCapacity: { type: "number", description: "Provisioned read capacity units (optional, default: 5)" },
-      writeCapacity: { type: "number", description: "Provisioned write capacity units (optional, default: 5)" },
+      sortKeyType: {
+        type: "string",
+        enum: ["S", "N", "B"],
+        description: "Type of sort key",
+      },
+      projectionType: {
+        type: "string",
+        enum: ["ALL", "KEYS_ONLY", "INCLUDE"],
+        description: "Type of projection",
+      },
+      nonKeyAttributes: {
+        type: "array",
+        items: { type: "string" },
+        description: "Non-key attributes to project (optional)",
+      },
+      readCapacity: {
+        type: "number",
+        description: "Provisioned read capacity units (optional, default: 5)",
+      },
+      writeCapacity: {
+        type: "number",
+        description: "Provisioned write capacity units (optional, default: 5)",
+      },
     },
-    required: ["tableName", "indexName", "partitionKey", "partitionKeyType", "sortKey", "sortKeyType", "projectionType"],
+    required: [
+      "tableName",
+      "indexName",
+      "partitionKey",
+      "partitionKeyType",
+      "sortKey",
+      "sortKeyType",
+      "projectionType",
+    ],
   },
 };
 
@@ -135,13 +242,35 @@ const UPDATE_ITEM_TOOL: Tool = {
     properties: {
       tableName: { type: "string", description: "Name of the table" },
       key: { type: "object", description: "Primary key of the item to update" },
-      updateExpression: { type: "string", description: "Update expression (e.g., 'SET #n = :name')" },
-      expressionAttributeNames: { type: "object", description: "Attribute name mappings" },
-      expressionAttributeValues: { type: "object", description: "Values for the update expression" },
-      conditionExpression: { type: "string", description: "Condition for update (optional)" },
-      returnValues: { type: "string", enum: ["NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", "UPDATED_NEW"], description: "What values to return" },
+      updateExpression: {
+        type: "string",
+        description: "Update expression (e.g., 'SET #n = :name')",
+      },
+      expressionAttributeNames: {
+        type: "object",
+        description: "Attribute name mappings",
+      },
+      expressionAttributeValues: {
+        type: "object",
+        description: "Values for the update expression",
+      },
+      conditionExpression: {
+        type: "string",
+        description: "Condition for update (optional)",
+      },
+      returnValues: {
+        type: "string",
+        enum: ["NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", "UPDATED_NEW"],
+        description: "What values to return",
+      },
     },
-    required: ["tableName", "key", "updateExpression", "expressionAttributeNames", "expressionAttributeValues"],
+    required: [
+      "tableName",
+      "key",
+      "updateExpression",
+      "expressionAttributeNames",
+      "expressionAttributeValues",
+    ],
   },
 };
 
@@ -153,7 +282,10 @@ const UPDATE_CAPACITY_TOOL: Tool = {
     properties: {
       tableName: { type: "string", description: "Name of the table" },
       readCapacity: { type: "number", description: "New read capacity units" },
-      writeCapacity: { type: "number", description: "New write capacity units" },
+      writeCapacity: {
+        type: "number",
+        description: "New write capacity units",
+      },
     },
     required: ["tableName", "readCapacity", "writeCapacity"],
   },
@@ -179,7 +311,10 @@ const GET_ITEM_TOOL: Tool = {
     type: "object",
     properties: {
       tableName: { type: "string", description: "Name of the table" },
-      key: { type: "object", description: "Primary key of the item to retrieve" },
+      key: {
+        type: "object",
+        description: "Primary key of the item to retrieve",
+      },
     },
     required: ["tableName", "key"],
   },
@@ -192,13 +327,35 @@ const QUERY_TABLE_TOOL: Tool = {
     type: "object",
     properties: {
       tableName: { type: "string", description: "Name of the table" },
-      keyConditionExpression: { type: "string", description: "Key condition expression" },
-      expressionAttributeValues: { type: "object", description: "Values for the key condition expression" },
-      expressionAttributeNames: { type: "object", description: "Attribute name mappings", optional: true },
-      filterExpression: { type: "string", description: "Filter expression for results", optional: true },
-      limit: { type: "number", description: "Maximum number of items to return", optional: true },
+      keyConditionExpression: {
+        type: "string",
+        description: "Key condition expression",
+      },
+      expressionAttributeValues: {
+        type: "object",
+        description: "Values for the key condition expression",
+      },
+      expressionAttributeNames: {
+        type: "object",
+        description: "Attribute name mappings",
+        optional: true,
+      },
+      filterExpression: {
+        type: "string",
+        description: "Filter expression for results",
+        optional: true,
+      },
+      limit: {
+        type: "number",
+        description: "Maximum number of items to return",
+        optional: true,
+      },
     },
-    required: ["tableName", "keyConditionExpression", "expressionAttributeValues"],
+    required: [
+      "tableName",
+      "keyConditionExpression",
+      "expressionAttributeValues",
+    ],
   },
 };
 
@@ -206,13 +363,29 @@ const SCAN_TABLE_TOOL: Tool = {
   name: "scan_table",
   description: "Scans an entire table with optional filters",
   inputSchema: {
-    type: "object", 
+    type: "object",
     properties: {
       tableName: { type: "string", description: "Name of the table" },
-      filterExpression: { type: "string", description: "Filter expression", optional: true },
-      expressionAttributeValues: { type: "object", description: "Values for the filter expression", optional: true },
-      expressionAttributeNames: { type: "object", description: "Attribute name mappings", optional: true },
-      limit: { type: "number", description: "Maximum number of items to return", optional: true },
+      filterExpression: {
+        type: "string",
+        description: "Filter expression",
+        optional: true,
+      },
+      expressionAttributeValues: {
+        type: "object",
+        description: "Values for the filter expression",
+        optional: true,
+      },
+      expressionAttributeNames: {
+        type: "object",
+        description: "Attribute name mappings",
+        optional: true,
+      },
+      limit: {
+        type: "number",
+        description: "Maximum number of items to return",
+        optional: true,
+      },
     },
     required: ["tableName"],
   },
@@ -224,11 +397,133 @@ const DESCRIBE_TABLE_TOOL: Tool = {
   inputSchema: {
     type: "object",
     properties: {
-      tableName: { type: "string", description: "Name of the table to describe" },
+      tableName: {
+        type: "string",
+        description: "Name of the table to describe",
+      },
     },
     required: ["tableName"],
   },
 };
+
+const GET_ASSISTANT_BY_ID_TOOL: Tool = {
+  name: "get_assistant_by_id",
+  description:
+    "Retrieves an UpAssistant item by id from the correct table based on environment (uat/prod)",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "ID of the item to retrieve" },
+      env: {
+        type: "string",
+        enum: ["uat", "prod"],
+        description: "Environment: 'uat' or 'prod'",
+      },
+    },
+    required: ["id", "env"],
+  },
+};
+
+const SEARCH_ASSISTANTS_BY_NAME_TOOL: Tool = {
+  name: "search_assistants_by_name",
+  description:
+    "Searches for UpAssistant items by name from the correct table based on environment (uat/prod). Can return multiple items.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Name to search for" },
+      env: {
+        type: "string",
+        enum: ["uat", "prod"],
+        description: "Environment: 'uat' or 'prod'",
+      },
+      limit: {
+        type: "number",
+        description: "Maximum number of items to return (optional)",
+        optional: true,
+      },
+    },
+    required: ["name", "env"],
+  },
+};
+
+const UPASSISTANT_PUT_ITEM_TOOL: Tool = {
+  name: "upassistant_put_item",
+  description:
+    "Puts an UpAssistant item into the correct table based on environment (uat/prod)",
+  inputSchema: {
+    type: "object",
+    properties: {
+      item: {
+        type: "object",
+        description: "Item to put into the table (as JSON object)",
+      },
+      env: {
+        type: "string",
+        enum: ["uat", "prod"],
+        description: "Environment: 'uat' or 'prod'",
+      },
+    },
+    required: ["item", "env"],
+  },
+};
+
+const UpAssistantGetItemByIdParamsSchema = z.object({
+  id: z.string(),
+  env: z.enum(["uat", "prod"]),
+});
+
+const SearchAssistantsByNameParamsSchema = z.object({
+  name: z.string(),
+  env: z.enum(["uat", "prod"]),
+  limit: z.number().optional(),
+});
+
+const AssistantMessageSchema = z.object({
+  type: z.string(),
+  value: z.string(),
+});
+
+const AssistantTemplateItemSchema = z.object({
+  key: z.string(),
+  title: z.string(),
+  type: z.string(),
+  value: z.array(z.any()), // Assuming value can be an array of any type for now
+});
+
+const AssistantItemSchema = z.object({
+  id: z.string(),
+  createdAt: z.string().datetime(),
+  description: z.string(),
+  extra: z.object({}).passthrough().optional(), // Making extra optional and flexible
+  frequencyPenalty: z.string(),
+  introductionMessages: z.array(AssistantMessageSchema),
+  maxTokens: z.string(),
+  modelName: z.string(),
+  name: z.string(),
+  presencePenalty: z.string(),
+  prompt: z.string(),
+  src: z.string().url(),
+  status: z.boolean(),
+  temperature: z.string(),
+  template: z.array(AssistantTemplateItemSchema),
+  title: z.string(),
+  topP: z.string(),
+  type: z.string(),
+  updatedAt: z.string().datetime(),
+  userId: z.string(),
+});
+
+const UpAssistantPutItemParamsSchema = z.object({
+  item: AssistantItemSchema,
+  env: z.enum(["uat", "prod"]),
+});
+
+function getUpAssistantTableName(env: string): string {
+  if (env === "uat") return "UpAssistant-myenv";
+  if (env === "prod") return "UpAssistant-upwagmitec";
+  throw new Error(`Invalid env: ${env}`);
+}
 
 // Implementation functions
 async function createTable(params: any) {
@@ -236,19 +531,31 @@ async function createTable(params: any) {
     const command = new CreateTableCommand({
       TableName: params.tableName,
       AttributeDefinitions: [
-        { AttributeName: params.partitionKey, AttributeType: params.partitionKeyType },
-        ...(params.sortKey ? [{ AttributeName: params.sortKey, AttributeType: params.sortKeyType }] : []),
+        {
+          AttributeName: params.partitionKey,
+          AttributeType: params.partitionKeyType,
+        },
+        ...(params.sortKey
+          ? [
+              {
+                AttributeName: params.sortKey,
+                AttributeType: params.sortKeyType,
+              },
+            ]
+          : []),
       ],
       KeySchema: [
         { AttributeName: params.partitionKey, KeyType: "HASH" as const },
-        ...(params.sortKey ? [{ AttributeName: params.sortKey, KeyType: "RANGE" as const }] : []),
+        ...(params.sortKey
+          ? [{ AttributeName: params.sortKey, KeyType: "RANGE" as const }]
+          : []),
       ],
       ProvisionedThroughput: {
         ReadCapacityUnits: params.readCapacity,
         WriteCapacityUnits: params.writeCapacity,
       },
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
@@ -270,7 +577,7 @@ async function listTables(params: any) {
       Limit: params.limit,
       ExclusiveStartTableName: params.exclusiveStartTableName,
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
@@ -292,8 +599,18 @@ async function createGSI(params: any) {
     const command = new UpdateTableCommand({
       TableName: params.tableName,
       AttributeDefinitions: [
-        { AttributeName: params.partitionKey, AttributeType: params.partitionKeyType },
-        ...(params.sortKey ? [{ AttributeName: params.sortKey, AttributeType: params.sortKeyType }] : []),
+        {
+          AttributeName: params.partitionKey,
+          AttributeType: params.partitionKeyType,
+        },
+        ...(params.sortKey
+          ? [
+              {
+                AttributeName: params.sortKey,
+                AttributeType: params.sortKeyType,
+              },
+            ]
+          : []),
       ],
       GlobalSecondaryIndexUpdates: [
         {
@@ -301,11 +618,15 @@ async function createGSI(params: any) {
             IndexName: params.indexName,
             KeySchema: [
               { AttributeName: params.partitionKey, KeyType: "HASH" as const },
-              ...(params.sortKey ? [{ AttributeName: params.sortKey, KeyType: "RANGE" as const }] : []),
+              ...(params.sortKey
+                ? [{ AttributeName: params.sortKey, KeyType: "RANGE" as const }]
+                : []),
             ],
             Projection: {
               ProjectionType: params.projectionType,
-              ...(params.projectionType === "INCLUDE" ? { NonKeyAttributes: params.nonKeyAttributes } : {}),
+              ...(params.projectionType === "INCLUDE"
+                ? { NonKeyAttributes: params.nonKeyAttributes }
+                : {}),
             },
             ProvisionedThroughput: {
               ReadCapacityUnits: params.readCapacity,
@@ -315,7 +636,7 @@ async function createGSI(params: any) {
         },
       ],
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
@@ -347,7 +668,7 @@ async function updateGSI(params: any) {
         },
       ],
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
@@ -369,7 +690,10 @@ async function createLSI(params: any) {
     const command = new CreateTableCommand({
       TableName: params.tableName,
       AttributeDefinitions: [
-        { AttributeName: params.partitionKey, AttributeType: params.partitionKeyType },
+        {
+          AttributeName: params.partitionKey,
+          AttributeType: params.partitionKeyType,
+        },
         { AttributeName: params.sortKey, AttributeType: params.sortKeyType },
       ],
       KeySchema: [
@@ -384,7 +708,9 @@ async function createLSI(params: any) {
           ],
           Projection: {
             ProjectionType: params.projectionType,
-            ...(params.projectionType === "INCLUDE" ? { NonKeyAttributes: params.nonKeyAttributes } : {}),
+            ...(params.projectionType === "INCLUDE"
+              ? { NonKeyAttributes: params.nonKeyAttributes }
+              : {}),
           },
         },
       ],
@@ -393,7 +719,7 @@ async function createLSI(params: any) {
         WriteCapacityUnits: params.writeCapacity || 5,
       },
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
@@ -420,7 +746,7 @@ async function updateItem(params: any) {
       ConditionExpression: params.conditionExpression,
       ReturnValues: params.returnValues || "NONE",
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
@@ -445,7 +771,7 @@ async function updateCapacity(params: any) {
         WriteCapacityUnits: params.writeCapacity,
       },
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
@@ -467,7 +793,7 @@ async function putItem(params: any) {
       TableName: params.tableName,
       Item: marshall(params.item),
     });
-    
+
     await dynamoClient.send(command);
     return {
       success: true,
@@ -489,7 +815,7 @@ async function getItem(params: any) {
       TableName: params.tableName,
       Key: marshall(params.key),
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
@@ -515,12 +841,14 @@ async function queryTable(params: any) {
       FilterExpression: params.filterExpression,
       Limit: params.limit,
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
       message: `Query executed successfully on table ${params.tableName}`,
-      items: response.Items ? response.Items.map(item => unmarshall(item)) : [],
+      items: response.Items
+        ? response.Items.map((item) => unmarshall(item))
+        : [],
       count: response.Count,
       scannedCount: response.ScannedCount,
     };
@@ -538,16 +866,20 @@ async function scanTable(params: any) {
     const command = new ScanCommand({
       TableName: params.tableName,
       FilterExpression: params.filterExpression,
-      ExpressionAttributeValues: params.expressionAttributeValues ? marshall(params.expressionAttributeValues) : undefined,
+      ExpressionAttributeValues: params.expressionAttributeValues
+        ? marshall(params.expressionAttributeValues)
+        : undefined,
       ExpressionAttributeNames: params.expressionAttributeNames,
       Limit: params.limit,
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
       message: `Scan executed successfully on table ${params.tableName}`,
-      items: response.Items ? response.Items.map(item => unmarshall(item)) : [],
+      items: response.Items
+        ? response.Items.map((item) => unmarshall(item))
+        : [],
       count: response.Count,
       scannedCount: response.ScannedCount,
     };
@@ -565,7 +897,7 @@ async function describeTable(params: any) {
     const command = new DescribeTableCommand({
       TableName: params.tableName,
     });
-    
+
     const response = await dynamoClient.send(command);
     return {
       success: true,
@@ -581,6 +913,111 @@ async function describeTable(params: any) {
   }
 }
 
+async function getAssistantById(
+  params: z.infer<typeof UpAssistantGetItemByIdParamsSchema>
+) {
+  try {
+    const validatedParams = UpAssistantGetItemByIdParamsSchema.parse(params);
+    const tableName = getUpAssistantTableName(validatedParams.env);
+    const command = new GetItemCommand({
+      TableName: tableName,
+      Key: marshall({ id: validatedParams.id }),
+    });
+    const response = await dynamoClient.send(command);
+    return {
+      success: true,
+      message: `Item retrieved from ${tableName}`,
+      item: response.Item ? unmarshall(response.Item) : null,
+    };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        message: "Invalid parameters for getAssistantById",
+        errors: error.errors,
+      };
+    }
+    console.error("Error in getAssistantById:", error);
+    return {
+      success: false,
+      message: `Failed to get item: ${error}`,
+    };
+  }
+}
+
+async function searchAssistantsByName(
+  params: z.infer<typeof SearchAssistantsByNameParamsSchema>
+) {
+  try {
+    const validatedParams = SearchAssistantsByNameParamsSchema.parse(params);
+    const tableName = getUpAssistantTableName(validatedParams.env);
+    const command = new ScanCommand({
+      TableName: tableName,
+      FilterExpression: "contains(#nm, :name_val)",
+      ExpressionAttributeNames: { "#nm": "name" },
+      ExpressionAttributeValues: marshall({
+        ":name_val": validatedParams.name,
+      }),
+      Limit: validatedParams.limit,
+    });
+    const response = await dynamoClient.send(command);
+    return {
+      success: true,
+      message: `Items matching name '${validatedParams.name}' retrieved from ${tableName}`,
+      items: response.Items
+        ? response.Items.map((item) => unmarshall(item))
+        : [],
+      count: response.Count,
+      scannedCount: response.ScannedCount,
+    };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        message: "Invalid parameters for searchAssistantsByName",
+        errors: error.errors,
+      };
+    }
+    console.error("Error in searchAssistantsByName:", error);
+    return {
+      success: false,
+      message: `Failed to search items by name: ${error}`,
+    };
+  }
+}
+
+async function upAssistantPutItem(
+  params: z.infer<typeof UpAssistantPutItemParamsSchema>
+) {
+  try {
+    const validatedParams = UpAssistantPutItemParamsSchema.parse(params);
+    const tableName = getUpAssistantTableName(validatedParams.env);
+    const command = new PutItemCommand({
+      TableName: tableName,
+      Item: marshall(validatedParams.item),
+    });
+    await dynamoClient.send(command);
+    return {
+      success: true,
+      message: `Item added to ${tableName}`,
+      item: validatedParams.item,
+    };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        message: "Invalid parameters for upAssistantPutItem",
+        errors: error.errors,
+      };
+    }
+    console.error("Error in upAssistantPutItem:", error);
+    return {
+      success: false,
+      message: `Failed to put item: ${error}`,
+    };
+  }
+}
+
 // Server setup
 const server = new Server(
   {
@@ -591,12 +1028,28 @@ const server = new Server(
     capabilities: {
       tools: {},
     },
-  },
+  }
 );
 
 // Request handlers
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [CREATE_TABLE_TOOL, UPDATE_CAPACITY_TOOL, PUT_ITEM_TOOL, GET_ITEM_TOOL, QUERY_TABLE_TOOL, SCAN_TABLE_TOOL, DESCRIBE_TABLE_TOOL, LIST_TABLES_TOOL, CREATE_GSI_TOOL, UPDATE_GSI_TOOL, CREATE_LSI_TOOL, UPDATE_ITEM_TOOL],
+  tools: [
+    CREATE_TABLE_TOOL,
+    UPDATE_CAPACITY_TOOL,
+    PUT_ITEM_TOOL,
+    GET_ITEM_TOOL,
+    QUERY_TABLE_TOOL,
+    SCAN_TABLE_TOOL,
+    DESCRIBE_TABLE_TOOL,
+    LIST_TABLES_TOOL,
+    CREATE_GSI_TOOL,
+    UPDATE_GSI_TOOL,
+    CREATE_LSI_TOOL,
+    UPDATE_ITEM_TOOL,
+    GET_ASSISTANT_BY_ID_TOOL,
+    SEARCH_ASSISTANTS_BY_NAME_TOOL,
+    UPASSISTANT_PUT_ITEM_TOOL,
+  ],
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -604,42 +1057,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     let result;
+    // Ensure args is not undefined and is a plain object for Zod parsing
+    const validatedArgs = typeof args === "object" && args !== null ? args : {};
+
     switch (name) {
       case "create_table":
-        result = await createTable(args);
+        result = await createTable(validatedArgs as any);
         break;
       case "list_tables":
-        result = await listTables(args);
+        result = await listTables(validatedArgs as any);
         break;
       case "create_gsi":
-        result = await createGSI(args);
+        result = await createGSI(validatedArgs as any);
         break;
       case "update_gsi":
-        result = await updateGSI(args);
+        result = await updateGSI(validatedArgs as any);
         break;
       case "create_lsi":
-        result = await createLSI(args);
+        result = await createLSI(validatedArgs as any);
         break;
       case "update_item":
-        result = await updateItem(args);
+        result = await updateItem(validatedArgs as any);
         break;
       case "update_capacity":
-        result = await updateCapacity(args);
+        result = await updateCapacity(validatedArgs as any);
         break;
       case "put_item":
-        result = await putItem(args);
+        result = await putItem(validatedArgs as any);
         break;
       case "get_item":
-        result = await getItem(args);
+        result = await getItem(validatedArgs as any);
         break;
       case "query_table":
-        result = await queryTable(args);
+        result = await queryTable(validatedArgs as any);
         break;
       case "scan_table":
-        result = await scanTable(args);
+        result = await scanTable(validatedArgs as any);
         break;
       case "describe_table":
-        result = await describeTable(args);
+        result = await describeTable(validatedArgs as any);
+        break;
+      case "get_assistant_by_id":
+        result = await getAssistantById(validatedArgs as any);
+        break;
+      case "search_assistants_by_name":
+        result = await searchAssistantsByName(validatedArgs as any);
+        break;
+      case "upassistant_put_item":
+        result = await upAssistantPutItem(validatedArgs as any);
         break;
       default:
         return {
