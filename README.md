@@ -60,7 +60,7 @@ export AWS_SECRET_ACCESS_KEY="your_secret_key"
 export AWS_REGION="your_region"
 ```
 
-3. Configure Neo4j connection (optional, but required for action tracking):
+3. Configure Neo4j connection (required for action tracking):
 
 ```bash
 export NEO4J_URI="bolt://localhost:7687"
@@ -68,17 +68,63 @@ export NEO4J_USERNAME="neo4j"
 export NEO4J_PASSWORD="your_password"
 ```
 
-4. Build the server:
+4. Initialize Neo4j schema (first-time setup):
+
+```bash
+npm run init-neo4j
+```
+
+5. Build the server:
 
 ```bash
 npm run build
 ```
 
-5. Start the server:
+6. Start the server:
 
 ```bash
 npm start
 ```
+
+7. Enable Docker container (optional):
+
+```bash
+docker build -t mcp/dynamodb-mcp-server -f Dockerfile .
+docker run -p 3000:3000 -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_REGION -e NEO4J_URI -e NEO4J_USERNAME -e NEO4J_PASSWORD mcp/dynamodb-mcp-server
+```
+
+## Configuration
+
+### Environment Variables
+
+- `AWS_ACCESS_KEY_ID`: Your AWS access key
+- `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key
+- `AWS_REGION`: Your AWS region (e.g., us-east-1)
+- `AWS_SESSION_TOKEN`: (Optional) Session token for temporary credentials
+- `NEO4J_URI`: URI for Neo4j database connection
+- `NEO4J_USERNAME`: Username for Neo4j database
+- `NEO4J_PASSWORD`: Password for Neo4j database
+- `CURSOR_USER_ID`: (Optional) Default user ID for Cursor integration
+- `CURSOR_USER_EMAIL`: (Optional) Default user email for Cursor integration
+- `CURSOR_USER_NAME`: (Optional) Default user name for Cursor integration
+- `CURSOR_USER_TEAM`: (Optional) Default user team for Cursor integration
+
+### Neo4j Setup
+
+For optimal performance, create the following indexes in your Neo4j database:
+
+```cypher
+CREATE CONSTRAINT IF NOT EXISTS FOR (user:User) REQUIRE user.id IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS FOR (mcp:MCP) REQUIRE mcp.id IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS FOR (action:Action) REQUIRE action.id IS UNIQUE;
+CREATE INDEX IF NOT EXISTS FOR (user:User) ON (user.email);
+CREATE INDEX IF NOT EXISTS FOR (user:User) ON (user.team);
+CREATE INDEX IF NOT EXISTS FOR (action:Action) ON (action.type);
+CREATE INDEX IF NOT EXISTS FOR (action:Action) ON (action.name);
+CREATE FULLTEXT INDEX actionContext IF NOT EXISTS FOR (a:Action) ON EACH [a.name, a.type];
+```
+
+The fulltext index enables context-based action recommendations.
 
 ## Tools
 
@@ -473,19 +519,17 @@ Here are some example questions you can ask Claude when using this DynamoDB MCP 
 - "List all users who are over 21 years old"
 - "Query the EmailIndex to find the user with email 'john@example.com'"
 
-## Configuration
+## Building
 
-### Setting up AWS Credentials
+Docker:
 
-1. Obtain AWS access key ID, secret access key, and region from the AWS Management Console.
-2. If using temporary credentials (e.g., IAM role), also obtain a session token.
-3. Ensure these credentials have appropriate permissions for DynamoDB operations.
+```sh
+docker build -t mcp/dynamodb-mcp-server -f Dockerfile .
+```
 
-### Usage with Claude Desktop
+## Usage with Cursor Desktop
 
-Add this to your `claude_desktop_config.json`:
-
-#### Docker (Recommended)
+Add this to your `cursor_desktop_config.json`:
 
 ```json
 {
@@ -503,27 +547,30 @@ Add this to your `claude_desktop_config.json`:
         "-e",
         "AWS_REGION",
         "-e",
-        "AWS_SESSION_TOKEN",
-        "mcp/dynamodb-mcp-server"
+        "NEO4J_URI",
+        "-e",
+        "NEO4J_USERNAME",
+        "-e",
+        "NEO4J_PASSWORD"
       ],
       "env": {
         "AWS_ACCESS_KEY_ID": "your_access_key",
         "AWS_SECRET_ACCESS_KEY": "your_secret_key",
         "AWS_REGION": "your_region",
-        "AWS_SESSION_TOKEN": "your_session_token"
+        "NEO4J_URI": "bolt://your-neo4j-instance:7687",
+        "NEO4J_USERNAME": "neo4j",
+        "NEO4J_PASSWORD": "your_password"
+      },
+      "includeAuth": true,
+      "authHeaders": {
+        "cursor-auth": "${BASE64_ENCODED_USER_INFO}"
       }
     }
   }
 }
 ```
 
-## Building
-
-Docker:
-
-```sh
-docker build -t mcp/dynamodb-mcp-server -f Dockerfile .
-```
+The `cursor-auth` header will be automatically populated with the current user's information when you configure `"includeAuth": true`.
 
 ## Development
 
@@ -541,6 +588,72 @@ This MCP server includes integrated Neo4j action tracking to record and analyze 
 2. Finding patterns in action sequences
 3. Suggesting next actions based on historical data
 4. Recommending actions based on context
+5. Tracking user identity and team membership
+6. Building organizational memory and knowledge retention
+
+### Cursor Integration
+
+The MCP server now includes full integration with Cursor, allowing actions to be attributed to specific users:
+
+```json
+{
+  "mcpServers": {
+    "dynamodb": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "AWS_ACCESS_KEY_ID",
+        "-e",
+        "AWS_SECRET_ACCESS_KEY",
+        "-e",
+        "AWS_REGION",
+        "-e",
+        "NEO4J_URI",
+        "-e",
+        "NEO4J_USERNAME",
+        "-e",
+        "NEO4J_PASSWORD",
+        "mcp/dynamodb-mcp-server"
+      ],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "your_access_key",
+        "AWS_SECRET_ACCESS_KEY": "your_secret_key",
+        "AWS_REGION": "your_region",
+        "NEO4J_URI": "bolt://your-neo4j-instance:7687",
+        "NEO4J_USERNAME": "neo4j",
+        "NEO4J_PASSWORD": "your_password"
+      },
+      "includeAuth": true,
+      "authHeaders": {
+        "cursor-auth": "<BASE64_ENCODED_USER_INFO>"
+      }
+    }
+  }
+}
+```
+
+The `cursor-auth` header should contain base64-encoded JSON with user identity information:
+
+```json
+{
+  "userId": "unique_user_id",
+  "userName": "User's Display Name",
+  "userEmail": "user@example.com",
+  "userTeam": "Engineering"
+}
+```
+
+### User Identity Management
+
+The Neo4j action tracking system now includes enhanced user identity features:
+
+- **User Nodes**: Tracked in Neo4j with attributes like name, email, and team
+- **Identity Preservation**: Users are consistently identified across sessions
+- **Team Analysis**: Actions can be analyzed at both individual and team levels
+- **Organization Insights**: Build understanding of how different teams interact with resources
 
 ### Action Tracking Tools
 
@@ -655,6 +768,20 @@ Example:
   "context": "setting up a new user authentication system"
 }
 ```
+
+### Benefits of Action Tracking
+
+The Neo4j action tracking system provides several key benefits:
+
+1. **Knowledge Retention**: Captures organizational knowledge that would otherwise be lost
+2. **Pattern Recognition**: Identifies common workflows and successful approaches
+3. **Smart Recommendations**: Suggests relevant actions based on historical patterns
+4. **Cross-Service Insights**: Shows dependencies between different systems
+5. **Team Collaboration**: Enhances knowledge sharing between team members
+6. **Workflow Optimization**: Identifies inefficient patterns and bottlenecks
+7. **Time Savings**: Reduces rediscovery of solutions and minimizes duplicated efforts
+
+As your team uses the system more, the Neo4j knowledge graph becomes increasingly valuable, providing deeper insights and more accurate recommendations.
 
 ### Cross-MCP Integration
 
