@@ -1,4 +1,4 @@
-FROM node:22.12-alpine as builder
+FROM node:20-alpine as builder
 
 COPY . /app
 COPY tsconfig.json /tsconfig.json
@@ -16,6 +16,7 @@ COPY --from=builder /app/package.json /app/package.json
 COPY --from=builder /app/package-lock.json /app/package-lock.json
 
 ENV NODE_ENV=production
+
 
 WORKDIR /app
 

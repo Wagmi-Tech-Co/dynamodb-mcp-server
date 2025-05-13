@@ -34,6 +34,14 @@ Iman Kamyabi (ikmyb@icloud.com)
 - Query tables with conditions
 - Scan tables with filters
 
+### Neo4j Action Tracking
+
+- Record all MCP actions in a Neo4j graph database
+- Find patterns in action sequences
+- Get recommendations based on historical data
+- Track relationships between different MCPs
+- Build a knowledge graph of team actions
+
 > **Note**: Delete operations are not supported to prevent accidental data loss.
 
 ## Setup
@@ -52,13 +60,21 @@ export AWS_SECRET_ACCESS_KEY="your_secret_key"
 export AWS_REGION="your_region"
 ```
 
-3. Build the server:
+3. Configure Neo4j connection (optional, but required for action tracking):
+
+```bash
+export NEO4J_URI="bolt://localhost:7687"
+export NEO4J_USERNAME="neo4j"
+export NEO4J_PASSWORD="your_password"
+```
+
+4. Build the server:
 
 ```bash
 npm run build
 ```
 
-4. Start the server:
+5. Start the server:
 
 ```bash
 npm start
@@ -516,6 +532,140 @@ To run in development mode with auto-reloading:
 ```bash
 npm run dev
 ```
+
+## Neo4j Action Tracking
+
+This MCP server includes integrated Neo4j action tracking to record and analyze MCP actions across different services. This helps in:
+
+1. Recording all actions taken through MCPs
+2. Finding patterns in action sequences
+3. Suggesting next actions based on historical data
+4. Recommending actions based on context
+
+### Action Tracking Tools
+
+#### record_action
+
+Records an MCP action in the Neo4j graph database.
+
+Parameters:
+- `userId`: ID of the user performing the action
+- `userName`: Name of the user
+- `mcpId`: ID of the MCP being used
+- `mcpType`: Type of MCP (DynamoDB, Mattermost, Jira, etc.)
+- `mcpName`: Name of the MCP instance
+- `actionType`: Type of action being performed
+- `actionName`: Specific action name
+- `parameters`: Action parameters
+- `result`: Action result
+- `status`: Status of the action ("success" or "failure")
+
+Example:
+```json
+{
+  "userId": "user123",
+  "userName": "John Doe",
+  "mcpId": "mattermost-mcp",
+  "mcpType": "Mattermost",
+  "mcpName": "Team Chat",
+  "actionType": "message",
+  "actionName": "post_message",
+  "parameters": {
+    "channelId": "general",
+    "message": "Hello team!"
+  },
+  "result": {
+    "messageId": "abc123"
+  },
+  "status": "success"
+}
+```
+
+#### get_similar_actions
+
+Finds similar actions to the current one.
+
+Parameters:
+- `mcpType`: Type of MCP
+- `actionType`: Type of action
+- `parameters`: Parameters of the action
+- `limit`: (Optional) Maximum number of similar actions to return
+
+Example:
+```json
+{
+  "mcpType": "DynamoDB",
+  "actionType": "table_management",
+  "parameters": {
+    "tableName": "Users"
+  }
+}
+```
+
+#### get_user_history
+
+Gets a user's action history.
+
+Parameters:
+- `userId`: ID of the user
+- `limit`: (Optional) Maximum number of actions to return
+
+Example:
+```json
+{
+  "userId": "user123",
+  "limit": 10
+}
+```
+
+#### suggest_next_action
+
+Suggests the next action based on typical patterns.
+
+Parameters:
+- `userId`: ID of the user
+- `mcpType`: Type of MCP
+- `currentActionType`: Type of the current action
+- `currentParameters`: Parameters of the current action
+
+Example:
+```json
+{
+  "userId": "user123",
+  "mcpType": "DynamoDB",
+  "currentActionType": "create_table",
+  "currentParameters": {
+    "tableName": "Users"
+  }
+}
+```
+
+#### get_action_recommendations
+
+Gets action recommendations based on a context description.
+
+Parameters:
+- `userId`: ID of the user
+- `context`: Context description to find relevant actions
+
+Example:
+```json
+{
+  "userId": "user123",
+  "context": "setting up a new user authentication system"
+}
+```
+
+### Cross-MCP Integration
+
+The Neo4j Action Tracking system is designed to work across multiple MCPs including:
+
+- DynamoDB MCP (this server)
+- Mattermost MCP
+- Jira MCP
+- And other future MCPs
+
+This integration allows your team to build a comprehensive knowledge graph of actions taken across different systems, enabling smart recommendations and workflow optimizations.
 
 ## License
 
