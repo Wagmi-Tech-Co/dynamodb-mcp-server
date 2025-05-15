@@ -18,6 +18,12 @@ import {
   QueryCommand,
   ScanCommand,
 } from "@aws-sdk/client-dynamodb";
+import {
+  CognitoIdentityProviderClient,
+  ListUsersCommand,
+  AdminGetUserCommand,
+  AttributeType,
+} from "@aws-sdk/client-cognito-identity-provider";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { z } from "zod";
 import { ActionTracker } from "./action-tracker.js";
@@ -42,11 +48,16 @@ const dynamoClient = new DynamoDBClient({
   credentials,
 });
 
+const cognitoClient = new CognitoIdentityProviderClient({
+  region: process.env.AWS_REGION,
+  credentials,
+});
+
 // Initialize Neo4j Action Tracker
 const actionTracker = new ActionTracker(
-  process.env.NEO4J_URI || 'neo4j+s://2bb97179.databases.neo4j.io',
-  process.env.NEO4J_USERNAME || 'neo4j',
-  process.env.NEO4J_PASSWORD || 'pLyHlW4TtoC4Sh-7xToWqx_LeIFOuQ6rLN91v6hIPbc'
+  process.env.NEO4J_URI || "neo4j+s://2bb97179.databases.neo4j.io",
+  process.env.NEO4J_USERNAME || "neo4j",
+  process.env.NEO4J_PASSWORD || "pLyHlW4TtoC4Sh-7xToWqx_LeIFOuQ6rLN91v6hIPbc"
 );
 
 // Define tools
@@ -477,6 +488,23 @@ const UPASSISTANT_PUT_ITEM_TOOL: Tool = {
   },
 };
 
+const FIND_USER_BY_EMAIL_TOOL: Tool = {
+  name: "find_user_by_email",
+  description: "Finds a user by email in Cognito and returns their attributes.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      email: { type: "string", description: "Email of the user to find" },
+      env: {
+        type: "string",
+        enum: ["uat", "prod"],
+        description: "Environment: 'uat' or 'prod'",
+      },
+    },
+    required: ["email", "env"],
+  },
+};
+
 const UpAssistantGetItemByIdParamsSchema = z.object({
   id: z.string(),
   env: z.enum(["uat", "prod"]),
@@ -528,10 +556,21 @@ const UpAssistantPutItemParamsSchema = z.object({
   env: z.enum(["uat", "prod"]),
 });
 
+const FindUserByEmailParamsSchema = z.object({
+  email: z.string().email(),
+  env: z.enum(["uat", "prod"]),
+});
+
 function getUpAssistantTableName(env: string): string {
   if (env === "uat") return "UpAssistant-myenv";
   if (env === "prod") return "UpAssistant-upwagmitec";
   throw new Error(`Invalid env: ${env}`);
+}
+
+function getCognitoUserPoolId(env: string): string {
+  if (env === "uat") return "us-east-1_akkBktCUt";
+  if (env === "prod") return "us-east-1_tTejiiLwi";
+  throw new Error(`Invalid env for Cognito: ${env}`);
 }
 
 // Implementation functions
@@ -546,11 +585,11 @@ async function createTable(params: any) {
         },
         ...(params.sortKey
           ? [
-            {
-              AttributeName: params.sortKey,
-              AttributeType: params.sortKeyType,
-            },
-          ]
+              {
+                AttributeName: params.sortKey,
+                AttributeType: params.sortKeyType,
+              },
+            ]
           : []),
       ],
       KeySchema: [
@@ -614,11 +653,11 @@ async function createGSI(params: any) {
         },
         ...(params.sortKey
           ? [
-            {
-              AttributeName: params.sortKey,
-              AttributeType: params.sortKeyType,
-            },
-          ]
+              {
+                AttributeName: params.sortKey,
+                AttributeType: params.sortKeyType,
+              },
+            ]
           : []),
       ],
       GlobalSecondaryIndexUpdates: [
@@ -1027,6 +1066,106 @@ async function upAssistantPutItem(
   }
 }
 
+async function findUserByEmail(
+  params: z.infer<typeof FindUserByEmailParamsSchema>
+) {
+  try {
+    const validatedParams = FindUserByEmailParamsSchema.parse(params);
+    const userPoolId = getCognitoUserPoolId(validatedParams.env);
+    const emailToSearch = validatedParams.email;
+
+    // Attempt 1: Use AdminGetUserCommand (if email can be a username)
+    try {
+      const adminGetUserResponse = await cognitoClient.send(
+        new AdminGetUserCommand({
+          UserPoolId: userPoolId,
+          Username: emailToSearch,
+        })
+      );
+
+      if (adminGetUserResponse.UserAttributes) {
+        const attributes = adminGetUserResponse.UserAttributes.reduce(
+          (acc: Record<string, string | undefined>, attr: AttributeType) => {
+            if (attr.Name) acc[attr.Name] = attr.Value;
+            return acc;
+          },
+          {} as Record<string, string | undefined>
+        );
+        return {
+          success: true,
+          message: `User found successfully using AdminGetUser in ${validatedParams.env}`,
+          user: {
+            username: adminGetUserResponse.Username,
+            attributes: attributes,
+            userStatus: adminGetUserResponse.UserStatus,
+            enabled: adminGetUserResponse.Enabled,
+            userCreateDate: adminGetUserResponse.UserCreateDate,
+            userLastModifiedDate: adminGetUserResponse.UserLastModifiedDate,
+          },
+        };
+      }
+    } catch (adminGetUserError: any) {
+      // If AdminGetUser fails (e.g., UserNotFoundException, or email is not the username format),
+      // log the error and proceed to ListUsers.
+      console.warn(
+        `AdminGetUserCommand failed for ${emailToSearch} (will attempt ListUsers): ${adminGetUserError.name} - ${adminGetUserError.message}`
+      );
+    }
+
+    // Attempt 2: Use ListUsersCommand with a filter
+    const listUsersResponse = await cognitoClient.send(
+      new ListUsersCommand({
+        UserPoolId: userPoolId,
+        Filter: `email = "${emailToSearch}"`,
+        Limit: 1,
+      })
+    );
+
+    if (listUsersResponse.Users && listUsersResponse.Users.length > 0) {
+      const user = listUsersResponse.Users[0];
+      const attributes = user.Attributes?.reduce(
+        (acc: Record<string, string | undefined>, attr: AttributeType) => {
+          if (attr.Name) acc[attr.Name] = attr.Value;
+          return acc;
+        },
+        {} as Record<string, string | undefined>
+      );
+      return {
+        success: true,
+        message: `User found successfully using ListUsers in ${validatedParams.env}`,
+        user: {
+          username: user.Username,
+          attributes: attributes,
+          userStatus: user.UserStatus,
+          enabled: user.Enabled,
+          userCreateDate: user.UserCreateDate,
+          userLastModifiedDate: user.UserLastModifiedDate,
+        },
+      };
+    } else {
+      return {
+        success: false,
+        message: `User with email ${emailToSearch} not found in ${validatedParams.env} using ListUsers.`,
+      };
+    }
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        message: "Invalid parameters for findUserByEmail",
+        errors: error.errors,
+      };
+    }
+    console.error("Error in findUserByEmail:", error);
+    return {
+      success: false,
+      message: `Failed to find user by email due to an unexpected error: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+}
+
 // Server setup
 const server = new Server(
   {
@@ -1058,7 +1197,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     GET_ASSISTANT_BY_ID_TOOL,
     SEARCH_ASSISTANTS_BY_NAME_TOOL,
     UPASSISTANT_PUT_ITEM_TOOL,
-    ...neo4jActionTools
+    FIND_USER_BY_EMAIL_TOOL,
+    ...neo4jActionTools,
   ],
 }));
 
@@ -1072,265 +1212,314 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // Extract user information if available
     const userInfo = {
-      userId: String(validatedArgs.userId || 'anonymous'),
-      userName: String(validatedArgs.userName || 'Anonymous User')
+      userId: String(validatedArgs.userId || "anonymous"),
+      userName: String(validatedArgs.userName || "Anonymous User"),
     };
 
     switch (name) {
       case "create_table":
         result = await createTable(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'table_management',
-          actionName: 'create_table',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "table_management",
+            actionName: "create_table",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "list_tables":
         result = await listTables(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'table_management',
-          actionName: 'list_tables',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "table_management",
+            actionName: "list_tables",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "create_gsi":
         result = await createGSI(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'index_management',
-          actionName: 'create_gsi',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "index_management",
+            actionName: "create_gsi",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "update_gsi":
         result = await updateGSI(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'index_management',
-          actionName: 'update_gsi',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "index_management",
+            actionName: "update_gsi",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "create_lsi":
         result = await createLSI(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'index_management',
-          actionName: 'create_lsi',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "index_management",
+            actionName: "create_lsi",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "update_item":
         result = await updateItem(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'data_operation',
-          actionName: 'update_item',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "data_operation",
+            actionName: "update_item",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "update_capacity":
         result = await updateCapacity(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'capacity_management',
-          actionName: 'update_capacity',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "capacity_management",
+            actionName: "update_capacity",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "put_item":
         result = await putItem(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'data_operation',
-          actionName: 'put_item',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "data_operation",
+            actionName: "put_item",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "get_item":
         result = await getItem(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'data_operation',
-          actionName: 'get_item',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "data_operation",
+            actionName: "get_item",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "query_table":
         result = await queryTable(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'data_operation',
-          actionName: 'query_table',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "data_operation",
+            actionName: "query_table",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "scan_table":
         result = await scanTable(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'data_operation',
-          actionName: 'scan_table',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "data_operation",
+            actionName: "scan_table",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "describe_table":
         result = await describeTable(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'table_management',
-          actionName: 'describe_table',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "table_management",
+            actionName: "describe_table",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "get_assistant_by_id":
         result = await getAssistantById(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'assistant_management',
-          actionName: 'get_assistant_by_id',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "assistant_management",
+            actionName: "get_assistant_by_id",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "search_assistants_by_name":
         result = await searchAssistantsByName(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'assistant_management',
-          actionName: 'search_assistants_by_name',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "assistant_management",
+            actionName: "search_assistants_by_name",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "upassistant_put_item":
         result = await upAssistantPutItem(validatedArgs as any);
-        await actionTracker.recordAction({
-          userId: userInfo.userId,
-          userName: userInfo.userName,
-          mcpId: 'dynamodb-mcp-server',
-          mcpType: 'DynamoDB',
-          mcpName: 'AWS DynamoDB',
-          actionType: 'assistant_management',
-          actionName: 'upassistant_put_item',
-          parameters: validatedArgs,
-          result,
-          status: result.success ? 'success' : 'failure'
-        }).catch(error => {
-          console.error('Error recording action:', error);
-        });
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "DynamoDB",
+            mcpName: "AWS DynamoDB",
+            actionType: "assistant_management",
+            actionName: "upassistant_put_item",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
+        break;
+      case "find_user_by_email":
+        result = await findUserByEmail(validatedArgs as any);
+        await actionTracker
+          .recordAction({
+            userId: userInfo.userId,
+            userName: userInfo.userName,
+            mcpId: "dynamodb-mcp-server",
+            mcpType: "Cognito",
+            mcpName: "AWS Cognito",
+            actionType: "user_lookup",
+            actionName: "find_user_by_email",
+            parameters: validatedArgs,
+            result,
+            status: result.success ? "success" : "failure",
+          })
+          .catch((error) => {
+            console.error("Error recording action:", error);
+          });
         break;
       case "get_similar_actions":
         result = await actionTracker.findSimilarActions(validatedArgs as any);
@@ -1338,7 +1527,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "get_user_history":
         result = await actionTracker.getUserActionHistory(
           String(validatedArgs.userId),
-          validatedArgs.limit !== undefined ? Number(validatedArgs.limit) : undefined
+          validatedArgs.limit !== undefined
+            ? Number(validatedArgs.limit)
+            : undefined
         );
         break;
       case "suggest_next_action":
