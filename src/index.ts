@@ -4,7 +4,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
   Tool,
+  Prompt,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
   DynamoDBClient,
@@ -1175,9 +1178,62 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      prompts: {},
     },
   }
 );
+
+// Define prompts
+const PROMPTS: Prompt[] = [
+  {
+    name: "create_dynamodb_table",
+    description: "Helps create a DynamoDB table with proper configuration",
+    arguments: [
+      {
+        name: "table_purpose",
+        description: "What the table will be used for",
+        required: true,
+      },
+      {
+        name: "primary_key_type",
+        description: "Type of primary key needed (simple or composite)",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "query_optimization",
+    description: "Provides guidance on optimizing DynamoDB queries",
+    arguments: [
+      {
+        name: "table_name",
+        description: "Name of the table to optimize",
+        required: true,
+      },
+      {
+        name: "access_patterns",
+        description: "Description of how data will be accessed",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "troubleshoot_dynamodb",
+    description: "Helps troubleshoot common DynamoDB issues",
+    arguments: [
+      {
+        name: "error_description",
+        description: "Description of the error or issue",
+        required: true,
+      },
+      {
+        name: "operation_type",
+        description: "Type of operation that failed (query, scan, put, etc.)",
+        required: false,
+      },
+    ],
+  },
+];
 
 // Request handlers
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -1201,6 +1257,105 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     ...neo4jActionTools,
   ],
 }));
+
+server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  prompts: PROMPTS,
+}));
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+
+  const promptArgs = args || {};
+
+  switch (name) {
+    case "create_dynamodb_table":
+      const tablePurpose = promptArgs.table_purpose || "general purpose";
+      const primaryKeyType = promptArgs.primary_key_type || "simple";
+
+      return {
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: `I need to create a DynamoDB table for ${tablePurpose}. I want a ${primaryKeyType} primary key. Please help me design the table schema and provide the create_table command with appropriate parameters.
+
+Consider:
+- Partition key selection for even data distribution
+- Sort key if needed for ${
+                primaryKeyType === "composite"
+                  ? "composite primary key"
+                  : "query patterns"
+              }
+- Appropriate capacity settings
+- Any secondary indexes that might be needed
+
+Please provide specific recommendations and the exact create_table tool call.`,
+            },
+          },
+        ],
+      };
+
+    case "query_optimization":
+      const tableName = promptArgs.table_name || "your_table";
+      const accessPatterns = promptArgs.access_patterns || "not specified";
+
+      return {
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: `I need help optimizing queries for the DynamoDB table "${tableName}". 
+
+Access patterns: ${accessPatterns}
+
+Please analyze and provide:
+1. Current table structure (use describe_table if needed)
+2. Query optimization recommendations
+3. Whether GSI/LSI would help
+4. Best practices for the described access patterns
+5. Example optimized query commands
+
+Focus on cost efficiency and performance.`,
+            },
+          },
+        ],
+      };
+
+    case "troubleshoot_dynamodb":
+      const errorDescription =
+        promptArgs.error_description || "unspecified error";
+      const operationType = promptArgs.operation_type || "unknown";
+
+      return {
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: `I'm experiencing an issue with DynamoDB:
+
+Error: ${errorDescription}
+Operation type: ${operationType}
+
+Please help me:
+1. Identify the root cause
+2. Provide step-by-step troubleshooting
+3. Suggest specific tools to diagnose the issue
+4. Recommend fixes or workarounds
+5. Preventive measures for the future
+
+If you need more information about the table structure or data, please suggest which diagnostic commands to run.`,
+            },
+          },
+        ],
+      };
+
+    default:
+      throw new Error(`Unknown prompt: ${name}`);
+  }
+});
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
