@@ -1,0 +1,44 @@
+# Smithery configuration file: https://smithery.ai/docs/build/project-config
+
+build:
+  dockerBuildPath: .
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_REGION
+    properties:
+      AWS_ACCESS_KEY_ID:
+        type: string
+        description: The AWS Access Key ID for DynamoDB and Cognito access.
+      AWS_SECRET_ACCESS_KEY:
+        type: string
+        description: The AWS Secret Access Key for DynamoDB and Cognito access.
+      AWS_SESSION_TOKEN:
+        type: string
+        description: Optional AWS Session Token for temporary credentials.
+      AWS_REGION:
+        type: string
+        description: The AWS region where your DynamoDB tables and Cognito user pools are located.
+        default: us-east-1
+      NEO4J_URI:
+        type: string
+        description: Optional Neo4j database URI for action tracking. If not provided, action tracking will be disabled.
+      NEO4J_USERNAME:
+        type: string
+        description: Optional Neo4j username for action tracking. If not provided, action tracking will be disabled.
+      NEO4J_PASSWORD:
+        type: string
+        description: Optional Neo4j password for action tracking. If not provided, action tracking will be disabled.
+  exampleConfig:
+    AWS_ACCESS_KEY_ID: "AKIAIOSFODNN7EXAMPLE"
+    AWS_SECRET_ACCESS_KEY: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    AWS_REGION: "us-east-1"
+    NEO4J_URI: "neo4j+s://example.databases.neo4j.io"
+    NEO4J_USERNAME: "neo4j"
+    NEO4J_PASSWORD: "password123"
