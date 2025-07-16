@@ -56,11 +56,11 @@ const cognitoClient = new CognitoIdentityProviderClient({
   credentials,
 });
 
-// Initialize Neo4j Action Tracker
+// Initialize Neo4j Action Tracker (optional)
 const actionTracker = new ActionTracker(
-  process.env.NEO4J_URI || "neo4j+s://2bb97179.databases.neo4j.io",
-  process.env.NEO4J_USERNAME || "neo4j",
-  process.env.NEO4J_PASSWORD || "pLyHlW4TtoC4Sh-7xToWqx_LeIFOuQ6rLN91v6hIPbc"
+  process.env.NEO4J_URI,
+  process.env.NEO4J_USERNAME,
+  process.env.NEO4J_PASSWORD
 );
 
 // Define tools
@@ -1717,12 +1717,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // Server startup
 async function runServer() {
   try {
-    // Connect to Neo4j first
+    // Try to connect to Neo4j (optional)
     await actionTracker.connect();
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("DynamoDB and Neo4j Action Tracking Server running on stdio");
+    console.error("DynamoDB MCP Server running on stdio");
   } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);

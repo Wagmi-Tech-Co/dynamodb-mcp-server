@@ -2,14 +2,26 @@ import neo4j from 'neo4j-driver';
 import { v4 as uuidv4 } from 'uuid';
 
 export class ActionTracker {
-    private driver: neo4j.Driver;
+    private driver: neo4j.Driver | null = null;
     private session: neo4j.Session | null = null;
+    private enabled: boolean = false;
 
-    constructor(uri: string, username: string, password: string) {
-        this.driver = neo4j.driver(uri, neo4j.auth.basic(username, password));
+    constructor(uri?: string, username?: string, password?: string) {
+        if (uri && username && password) {
+            this.driver = neo4j.driver(uri, neo4j.auth.basic(username, password));
+            this.enabled = true;
+        } else {
+            console.warn('Neo4j connection parameters not provided. Action tracking will be disabled.');
+            this.enabled = false;
+        }
     }
 
     async connect() {
+        if (!this.enabled || !this.driver) {
+            console.log('Neo4j Action Tracker is disabled - skipping connection');
+            return;
+        }
+
         try {
             await this.driver.verifyConnectivity();
             console.log('Connected to Neo4j Action Tracker');
@@ -18,11 +30,17 @@ export class ActionTracker {
             await this.initializeSchema();
         } catch (error) {
             console.error('Failed to connect to Neo4j Action Tracker:', error);
-            throw error;
+            console.warn('Disabling Neo4j Action Tracker and continuing without it');
+            this.enabled = false;
+            this.driver = null;
         }
     }
 
     private async initializeSchema() {
+        if (!this.enabled || !this.driver) {
+            return;
+        }
+
         const session = this.driver.session();
         try {
             // Create constraints for unique IDs
@@ -52,7 +70,9 @@ export class ActionTracker {
     }
 
     async close() {
-        await this.driver.close();
+        if (this.enabled && this.driver) {
+            await this.driver.close();
+        }
     }
 
     async recordAction({
@@ -78,6 +98,14 @@ export class ActionTracker {
         result: any;
         status: 'success' | 'failure';
     }) {
+        if (!this.enabled || !this.driver) {
+            return {
+                success: true,
+                actionId: uuidv4(),
+                message: 'Action tracking is disabled - action not recorded'
+            };
+        }
+
         const session = this.driver.session();
         const actionId = uuidv4();
         const timestamp = new Date().toISOString();
@@ -150,6 +178,13 @@ export class ActionTracker {
         actionId: string;
         maxDepth?: number;
     }) {
+        if (!this.enabled || !this.driver) {
+            return {
+                success: false,
+                message: 'Action tracking is disabled - cannot retrieve related actions'
+            };
+        }
+
         const session = this.driver.session();
 
         try {
@@ -189,6 +224,13 @@ export class ActionTracker {
         parameters: Record<string, any>;
         limit?: number;
     }) {
+        if (!this.enabled || !this.driver) {
+            return {
+                success: false,
+                message: 'Action tracking is disabled - cannot find similar actions'
+            };
+        }
+
         const session = this.driver.session();
 
         try {
@@ -242,6 +284,13 @@ export class ActionTracker {
     }
 
     async getUserActionHistory(userId: string, limit = 20) {
+        if (!this.enabled || !this.driver) {
+            return {
+                success: false,
+                message: 'Action tracking is disabled - cannot retrieve user action history'
+            };
+        }
+
         const session = this.driver.session();
 
         try {
@@ -295,6 +344,13 @@ export class ActionTracker {
         currentActionType: string;
         currentParameters: Record<string, any>;
     }) {
+        if (!this.enabled || !this.driver) {
+            return {
+                success: false,
+                message: 'Action tracking is disabled - cannot suggest next action'
+            };
+        }
+
         const session = this.driver.session();
 
         try {
@@ -355,6 +411,13 @@ export class ActionTracker {
     }
 
     async getActionRecommendations(userId: string, context: string) {
+        if (!this.enabled || !this.driver) {
+            return {
+                success: false,
+                message: 'Action tracking is disabled - cannot get action recommendations'
+            };
+        }
+
         const session = this.driver.session();
 
         try {
