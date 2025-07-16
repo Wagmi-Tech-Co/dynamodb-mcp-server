@@ -1,0 +1,60 @@
+# Smithery configuration file: https://smithery.ai/docs/build/project-config
+
+startCommand:
+  type: stdio
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => ({
+      command: 'node',
+      args: ['dist/index.js'],
+      env: {
+        AWS_ACCESS_KEY_ID: config.awsAccessKeyId,
+        AWS_SECRET_ACCESS_KEY: config.awsSecretAccessKey,
+        AWS_REGION: config.awsRegion,
+        AWS_SESSION_TOKEN: config.awsSessionToken || undefined,
+        NEO4J_URI: config.neo4jUri,
+        NEO4J_USERNAME: config.neo4jUsername,
+        NEO4J_PASSWORD: config.neo4jPassword,
+      }
+    })
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - awsAccessKeyId
+      - awsSecretAccessKey
+      - awsRegion
+      - neo4jUri
+      - neo4jUsername
+      - neo4jPassword
+    properties:
+      awsAccessKeyId:
+        type: string
+        description: Your AWS access key ID
+      awsSecretAccessKey:
+        type: string
+        description: Your AWS secret access key
+      awsRegion:
+        type: string
+        description: AWS region (e.g., us-east-1)
+      awsSessionToken:
+        type: string
+        description: AWS session token (optional)
+      neo4jUri:
+        type: string
+        description: Neo4j URI (bolt://host:port)
+      neo4jUsername:
+        type: string
+        description: Neo4j username
+      neo4jPassword:
+        type: string
+        description: Neo4j password
+  exampleConfig:
+    awsAccessKeyId: AKIAEXAMPLE
+    awsSecretAccessKey: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    awsRegion: us-east-1
+    awsSessionToken: AQoDYXdzEJr...<token>
+    neo4jUri: bolt://localhost:7687
+    neo4jUsername: neo4j
+    neo4jPassword: password
