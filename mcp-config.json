@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+    "dynamodb-mcp-server": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
+        "-e",
+        "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
+        "-e",
+        "AWS_REGION=${AWS_REGION}",
+        "-e",
+        "AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}",
+        "-e",
+        "NEO4J_URI=${NEO4J_URI}",
+        "-e",
+        "NEO4J_USERNAME=${NEO4J_USERNAME}",
+        "-e",
+        "NEO4J_PASSWORD=${NEO4J_PASSWORD}",
+        "yusuf2403/dynamodb-mcp-server:latest"
+      ],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "your_aws_access_key_id",
+        "AWS_SECRET_ACCESS_KEY": "your_aws_secret_access_key",
+        "AWS_REGION": "us-east-1",
+        "AWS_SESSION_TOKEN": "",
+        "NEO4J_URI": "",
+        "NEO4J_USERNAME": "",
+        "NEO4J_PASSWORD": ""
+      }
+    }
+  }
+}

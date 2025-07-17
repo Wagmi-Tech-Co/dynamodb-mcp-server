@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  dynamodb-mcp:
+    build: .
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USERNAME=${NEO4J_USERNAME}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    # Uncomment the following lines if you want to expose an HTTP port in the future
+    # ports:
+    #   - "8080:8080"
+    # Add health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

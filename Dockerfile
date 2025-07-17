@@ -1,25 +1,52 @@
-FROM node:20-alpine as builder
-
-COPY . /app
-COPY tsconfig.json /tsconfig.json
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-RUN --mount=type=cache,target=/root/.npm npm install
+# Enable yarn
+RUN corepack enable
 
-RUN --mount=type=cache,target=/root/.npm-production npm ci --ignore-scripts --omit-dev
+# Copy package files
+COPY package.json yarn.lock ./
 
-FROM node:22-alpine AS release
+# Install dependencies (skip scripts to avoid build issues)
+RUN yarn install --frozen-lockfile --ignore-scripts
 
-COPY --from=builder /app/dist /app/dist
-COPY --from=builder /app/package.json /app/package.json
-COPY --from=builder /app/package-lock.json /app/package-lock.json
+# Copy source code
+COPY . .
 
+# Build the application
+RUN yarn build
+
+# Production stage
+FROM node:20-alpine AS release
+
+WORKDIR /app
+
+# Enable yarn
+RUN corepack enable
+
+# Copy package files
+COPY package.json yarn.lock ./
+
+# Install production dependencies only (skip scripts)
+RUN yarn install --frozen-lockfile --production --ignore-scripts && yarn cache clean
+
+# Copy built application
+COPY --from=builder /app/dist ./dist
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S mcp -u 1001
+
+# Change ownership of the app directory
+RUN chown -R mcp:nodejs /app
+USER mcp
+
+# Set environment
 ENV NODE_ENV=production
 
+# Expose port (optional, for future HTTP support)
+EXPOSE 8080
 
-WORKDIR /app
-
-RUN npm ci --ignore-scripts --omit-dev
-
+# Use exec form for proper signal handling
 ENTRYPOINT ["node", "dist/index.js"]
