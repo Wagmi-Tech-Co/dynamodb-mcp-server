@@ -33,28 +33,43 @@ import { ActionTracker } from "./action-tracker.js";
 import { neo4jActionTools } from "./neo4j-tools.js";
 
 // AWS client initialization
-const credentials: {
-  accessKeyId: string;
-  secretAccessKey: string;
-  sessionToken?: string;
-} = {
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-};
+const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+const awsSessionToken = process.env.AWS_SESSION_TOKEN;
+const awsRegion = process.env.AWS_REGION || 'us-east-1';
 
-if (process.env.AWS_SESSION_TOKEN) {
-  credentials.sessionToken = process.env.AWS_SESSION_TOKEN;
+let dynamoClient: DynamoDBClient | null = null;
+let cognitoClient: CognitoIdentityProviderClient | null = null;
+
+if (!awsAccessKeyId || !awsSecretAccessKey) {
+  console.warn('AWS credentials not provided. AWS operations will be disabled.');
+  console.warn('To enable AWS operations, set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.');
+} else {
+  const credentials: {
+    accessKeyId: string;
+    secretAccessKey: string;
+    sessionToken?: string;
+  } = {
+    accessKeyId: awsAccessKeyId,
+    secretAccessKey: awsSecretAccessKey,
+  };
+
+  if (awsSessionToken) {
+    credentials.sessionToken = awsSessionToken;
+  }
+
+  dynamoClient = new DynamoDBClient({
+    region: awsRegion,
+    credentials,
+  });
+
+  cognitoClient = new CognitoIdentityProviderClient({
+    region: awsRegion,
+    credentials,
+  });
 }
 
-const dynamoClient = new DynamoDBClient({
-  region: process.env.AWS_REGION,
-  credentials,
-});
-
-const cognitoClient = new CognitoIdentityProviderClient({
-  region: process.env.AWS_REGION,
-  credentials,
-});
+console.error(`AWS clients initialized with region: ${awsRegion}`);
 
 // Initialize Neo4j Action Tracker (optional)
 const actionTracker = new ActionTracker(
@@ -578,6 +593,13 @@ function getCognitoUserPoolId(env: string): string {
 
 // Implementation functions
 async function createTable(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new CreateTableCommand({
       TableName: params.tableName,
@@ -623,6 +645,13 @@ async function createTable(params: any) {
 }
 
 async function listTables(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new ListTablesCommand({
       Limit: params.limit,
@@ -646,6 +675,13 @@ async function listTables(params: any) {
 }
 
 async function createGSI(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new UpdateTableCommand({
       TableName: params.tableName,
@@ -704,6 +740,13 @@ async function createGSI(params: any) {
 }
 
 async function updateGSI(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new UpdateTableCommand({
       TableName: params.tableName,
@@ -736,6 +779,13 @@ async function updateGSI(params: any) {
 }
 
 async function createLSI(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     // Note: LSIs must be created during table creation, so we need the table's primary key info
     const command = new CreateTableCommand({
@@ -787,6 +837,13 @@ async function createLSI(params: any) {
 }
 
 async function updateItem(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new UpdateItemCommand({
       TableName: params.tableName,
@@ -814,6 +871,13 @@ async function updateItem(params: any) {
 }
 
 async function updateCapacity(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new UpdateTableCommand({
       TableName: params.tableName,
@@ -839,6 +903,13 @@ async function updateCapacity(params: any) {
 }
 
 async function putItem(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new PutItemCommand({
       TableName: params.tableName,
@@ -861,6 +932,13 @@ async function putItem(params: any) {
 }
 
 async function getItem(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new GetItemCommand({
       TableName: params.tableName,
@@ -883,6 +961,13 @@ async function getItem(params: any) {
 }
 
 async function queryTable(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new QueryCommand({
       TableName: params.tableName,
@@ -913,6 +998,13 @@ async function queryTable(params: any) {
 }
 
 async function scanTable(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new ScanCommand({
       TableName: params.tableName,
@@ -944,6 +1036,13 @@ async function scanTable(params: any) {
 }
 
 async function describeTable(params: any) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const command = new DescribeTableCommand({
       TableName: params.tableName,
@@ -967,6 +1066,13 @@ async function describeTable(params: any) {
 async function getAssistantById(
   params: z.infer<typeof UpAssistantGetItemByIdParamsSchema>
 ) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const validatedParams = UpAssistantGetItemByIdParamsSchema.parse(params);
     const tableName = getUpAssistantTableName(validatedParams.env);
@@ -999,6 +1105,13 @@ async function getAssistantById(
 async function searchAssistantsByName(
   params: z.infer<typeof SearchAssistantsByNameParamsSchema>
 ) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const validatedParams = SearchAssistantsByNameParamsSchema.parse(params);
     const tableName = getUpAssistantTableName(validatedParams.env);
@@ -1040,6 +1153,13 @@ async function searchAssistantsByName(
 async function upAssistantPutItem(
   params: z.infer<typeof UpAssistantPutItemParamsSchema>
 ) {
+  if (!dynamoClient) {
+    return {
+      success: false,
+      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const validatedParams = UpAssistantPutItemParamsSchema.parse(params);
     const tableName = getUpAssistantTableName(validatedParams.env);
@@ -1072,6 +1192,13 @@ async function upAssistantPutItem(
 async function findUserByEmail(
   params: z.infer<typeof FindUserByEmailParamsSchema>
 ) {
+  if (!cognitoClient) {
+    return {
+      success: false,
+      message: 'AWS Cognito client not initialized. Please provide AWS credentials.'
+    };
+  }
+  
   try {
     const validatedParams = FindUserByEmailParamsSchema.parse(params);
     const userPoolId = getCognitoUserPoolId(validatedParams.env);
