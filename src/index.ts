@@ -36,14 +36,18 @@ import { neo4jActionTools } from "./neo4j-tools.js";
 const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
 const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
 const awsSessionToken = process.env.AWS_SESSION_TOKEN;
-const awsRegion = process.env.AWS_REGION || 'us-east-1';
+const awsRegion = process.env.AWS_REGION || "us-east-1";
 
 let dynamoClient: DynamoDBClient | null = null;
 let cognitoClient: CognitoIdentityProviderClient | null = null;
 
 if (!awsAccessKeyId || !awsSecretAccessKey) {
-  console.warn('AWS credentials not provided. AWS operations will be disabled.');
-  console.warn('To enable AWS operations, set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.');
+  console.warn(
+    "AWS credentials not provided. AWS operations will be disabled."
+  );
+  console.warn(
+    "To enable AWS operations, set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables."
+  );
 } else {
   const credentials: {
     accessKeyId: string;
@@ -596,10 +600,11 @@ async function createTable(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const command = new CreateTableCommand({
       TableName: params.tableName,
@@ -648,10 +653,11 @@ async function listTables(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const command = new ListTablesCommand({
       Limit: params.limit,
@@ -678,10 +684,11 @@ async function createGSI(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const command = new UpdateTableCommand({
       TableName: params.tableName,
@@ -743,10 +750,11 @@ async function updateGSI(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const command = new UpdateTableCommand({
       TableName: params.tableName,
@@ -782,10 +790,11 @@ async function createLSI(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     // Note: LSIs must be created during table creation, so we need the table's primary key info
     const command = new CreateTableCommand({
@@ -840,10 +849,11 @@ async function updateItem(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const command = new UpdateItemCommand({
       TableName: params.tableName,
@@ -874,10 +884,11 @@ async function updateCapacity(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const command = new UpdateTableCommand({
       TableName: params.tableName,
@@ -906,10 +917,11 @@ async function putItem(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const command = new PutItemCommand({
       TableName: params.tableName,
@@ -935,10 +947,11 @@ async function getItem(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const command = new GetItemCommand({
       TableName: params.tableName,
@@ -964,21 +977,27 @@ async function queryTable(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const queryParams: any = {
       TableName: params.tableName,
       KeyConditionExpression: params.keyConditionExpression,
     };
 
-    if (params.expressionAttributeValues && Object.keys(params.expressionAttributeValues).length > 0) {
-      queryParams.ExpressionAttributeValues = marshall(params.expressionAttributeValues);
+    if (params.expressionAttributeValues) {
+      queryParams.ExpressionAttributeValues = marshall(
+        params.expressionAttributeValues
+      );
     }
 
-    if (params.expressionAttributeNames && Object.keys(params.expressionAttributeNames).length > 0) {
+    if (
+      params.expressionAttributeNames &&
+      Object.keys(params.expressionAttributeNames).length > 0
+    ) {
       queryParams.ExpressionAttributeNames = params.expressionAttributeNames;
     }
 
@@ -1019,10 +1038,11 @@ async function scanTable(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const scanParams: any = {
       TableName: params.tableName,
@@ -1033,10 +1053,15 @@ async function scanTable(params: any) {
     }
 
     if (params.expressionAttributeValues) {
-      scanParams.ExpressionAttributeValues = marshall(params.expressionAttributeValues);
+      scanParams.ExpressionAttributeValues = marshall(
+        params.expressionAttributeValues
+      );
     }
 
-    if (params.expressionAttributeNames && Object.keys(params.expressionAttributeNames).length > 0) {
+    if (
+      params.expressionAttributeNames &&
+      Object.keys(params.expressionAttributeNames).length > 0
+    ) {
       scanParams.ExpressionAttributeNames = params.expressionAttributeNames;
     }
 
@@ -1073,10 +1098,11 @@ async function describeTable(params: any) {
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const command = new DescribeTableCommand({
       TableName: params.tableName,
@@ -1103,10 +1129,11 @@ async function getAssistantById(
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const validatedParams = UpAssistantGetItemByIdParamsSchema.parse(params);
     const tableName = getUpAssistantTableName(validatedParams.env);
@@ -1142,10 +1169,11 @@ async function searchAssistantsByName(
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const validatedParams = SearchAssistantsByNameParamsSchema.parse(params);
     const tableName = getUpAssistantTableName(validatedParams.env);
@@ -1190,10 +1218,11 @@ async function upAssistantPutItem(
   if (!dynamoClient) {
     return {
       success: false,
-      message: 'AWS DynamoDB client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const validatedParams = UpAssistantPutItemParamsSchema.parse(params);
     const tableName = getUpAssistantTableName(validatedParams.env);
@@ -1229,10 +1258,11 @@ async function findUserByEmail(
   if (!cognitoClient) {
     return {
       success: false,
-      message: 'AWS Cognito client not initialized. Please provide AWS credentials.'
+      message:
+        "AWS Cognito client not initialized. Please provide AWS credentials.",
     };
   }
-  
+
   try {
     const validatedParams = FindUserByEmailParamsSchema.parse(params);
     const userPoolId = getCognitoUserPoolId(validatedParams.env);
