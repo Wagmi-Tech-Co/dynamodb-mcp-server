@@ -22,8 +22,29 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: all
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+      with:
+        platforms: linux/amd64,linux/arm64
+
+    - name: Check Docker Hub credentials
+      if: github.event_name != 'pull_request'
+      run: |
+        if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+          echo "ERROR: DOCKERHUB_USERNAME secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+          echo "ERROR: DOCKERHUB_TOKEN secret is not set"
+          exit 1
+        fi
+        echo "Docker Hub credentials are configured"
+        echo "Username: ${{ secrets.DOCKERHUB_USERNAME }}"
 
     - name: Login to Docker Hub
       if: github.event_name != 'pull_request'
@@ -32,6 +53,8 @@ jobs:
         registry: ${{ env.REGISTRY }}
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
+      env:
+        DOCKER_CLI_EXPERIMENTAL: enabled
 
     - name: Extract metadata
       id: meta
@@ -56,11 +79,26 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        provenance: false
+        sbom: false
 
-    - name: Test Docker image
+    - name: Test Docker image (AMD64)
       if: github.event_name != 'pull_request'
       run: |
+        echo "Testing AMD64 image..."
         echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | docker run -i \
+          --platform linux/amd64 \
+          -e AWS_ACCESS_KEY_ID=test \
+          -e AWS_SECRET_ACCESS_KEY=test \
+          -e AWS_REGION=us-east-1 \
+          ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+
+    - name: Test Docker image (ARM64)
+      if: github.event_name != 'pull_request'
+      run: |
+        echo "Testing ARM64 image..."
+        echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | docker run -i \
+          --platform linux/arm64 \
           -e AWS_ACCESS_KEY_ID=test \
           -e AWS_SECRET_ACCESS_KEY=test \
           -e AWS_REGION=us-east-1 \

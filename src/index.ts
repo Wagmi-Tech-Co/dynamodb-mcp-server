@@ -969,14 +969,29 @@ async function queryTable(params: any) {
   }
   
   try {
-    const command = new QueryCommand({
+    const queryParams: any = {
       TableName: params.tableName,
       KeyConditionExpression: params.keyConditionExpression,
       ExpressionAttributeValues: marshall(params.expressionAttributeValues),
-      ExpressionAttributeNames: params.expressionAttributeNames,
-      FilterExpression: params.filterExpression,
-      Limit: params.limit,
-    });
+    };
+
+    if (params.expressionAttributeNames && Object.keys(params.expressionAttributeNames).length > 0) {
+      queryParams.ExpressionAttributeNames = params.expressionAttributeNames;
+    }
+
+    if (params.filterExpression) {
+      queryParams.FilterExpression = params.filterExpression;
+    }
+
+    if (params.limit) {
+      queryParams.Limit = params.limit;
+    }
+
+    if (params.indexName) {
+      queryParams.IndexName = params.indexName;
+    }
+
+    const command = new QueryCommand(queryParams);
 
     const response = await dynamoClient.send(command);
     return {
@@ -1006,15 +1021,31 @@ async function scanTable(params: any) {
   }
   
   try {
-    const command = new ScanCommand({
+    const scanParams: any = {
       TableName: params.tableName,
-      FilterExpression: params.filterExpression,
-      ExpressionAttributeValues: params.expressionAttributeValues
-        ? marshall(params.expressionAttributeValues)
-        : undefined,
-      ExpressionAttributeNames: params.expressionAttributeNames,
-      Limit: params.limit,
-    });
+    };
+
+    if (params.filterExpression) {
+      scanParams.FilterExpression = params.filterExpression;
+    }
+
+    if (params.expressionAttributeValues) {
+      scanParams.ExpressionAttributeValues = marshall(params.expressionAttributeValues);
+    }
+
+    if (params.expressionAttributeNames && Object.keys(params.expressionAttributeNames).length > 0) {
+      scanParams.ExpressionAttributeNames = params.expressionAttributeNames;
+    }
+
+    if (params.limit) {
+      scanParams.Limit = params.limit;
+    }
+
+    if (params.indexName) {
+      scanParams.IndexName = params.indexName;
+    }
+
+    const command = new ScanCommand(scanParams);
 
     const response = await dynamoClient.send(command);
     return {

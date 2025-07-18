@@ -49,3 +49,4 @@ coverage/
 # Yarn Integrity file
 .yarn-integrity
 docs/
+scripts
