@@ -29,8 +29,7 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { z } from "zod";
-import { ActionTracker } from "./action-tracker.js";
-import { neo4jActionTools } from "./neo4j-tools.js";
+// Neo4j dependencies removed
 
 // AWS client initialization
 const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
@@ -75,14 +74,19 @@ if (!awsAccessKeyId || !awsSecretAccessKey) {
 
 console.error(`AWS clients initialized with region: ${awsRegion}`);
 
-// Initialize Neo4j Action Tracker (optional)
-const actionTracker = new ActionTracker(
-  process.env.NEO4J_URI,
-  process.env.NEO4J_USERNAME,
-  process.env.NEO4J_PASSWORD
-);
+// Neo4j Action Tracker removed
 
 // Define tools
+const VERSION_TOOL: Tool = {
+  name: "get_version",
+  description: "Get the version of the DynamoDB MCP server",
+  inputSchema: {
+    type: "object",
+    properties: {},
+    required: [],
+  },
+};
+
 const CREATE_TABLE_TOOL: Tool = {
   name: "create_table",
   description: "Creates a new DynamoDB table with specified configuration",
@@ -364,32 +368,55 @@ const GET_ITEM_TOOL: Tool = {
 
 const QUERY_TABLE_TOOL: Tool = {
   name: "query_table",
-  description: "Queries a table using key conditions and optional filters",
+  description: "Queries a DynamoDB table using key conditions and optional filters. Optimized for high performance with comprehensive response metadata.",
   inputSchema: {
     type: "object",
     properties: {
-      tableName: { type: "string", description: "Name of the table" },
+      tableName: { 
+        type: "string", 
+        description: "Name of the table to query" 
+      },
       keyConditionExpression: {
         type: "string",
-        description: "Key condition expression",
+        description: "Key condition expression (e.g., 'userId = :userId')",
       },
       expressionAttributeValues: {
         type: "object",
-        description: "Values for the key condition expression",
+        description: "Values for the key condition expression (e.g., {':userId': 'user-123'})",
+      },
+      indexName: {
+        type: "string",
+        description: "Name of the Global Secondary Index to query (optional)",
+        optional: true,
       },
       expressionAttributeNames: {
         type: "object",
-        description: "Attribute name mappings",
+        description: "Attribute name mappings for reserved words (e.g., {'#createdAt': 'createdAt'})",
         optional: true,
       },
       filterExpression: {
         type: "string",
-        description: "Filter expression for results",
+        description: "Filter expression for additional filtering (e.g., '#createdAt >= :date')",
+        optional: true,
+      },
+      projectionExpression: {
+        type: "string",
+        description: "Attributes to retrieve (e.g., 'userId, email, createdAt')",
         optional: true,
       },
       limit: {
         type: "number",
-        description: "Maximum number of items to return",
+        description: "Maximum number of items to return (1-1000)",
+        optional: true,
+      },
+      scanIndexForward: {
+        type: "boolean",
+        description: "Sort order for range key: true = ascending, false = descending",
+        optional: true,
+      },
+      exclusiveStartKey: {
+        type: "object",
+        description: "Pagination key from previous query's lastEvaluatedKey",
         optional: true,
       },
     },
@@ -974,122 +1001,276 @@ async function getItem(params: any) {
 }
 
 async function queryTable(params: any) {
+  // Validate parameters before AWS operations
+  if (!params.tableName) {
+    return {
+      success: false,
+      message: "tableName is required",
+    };
+  }
+
+  if (!params.keyConditionExpression) {
+    return {
+      success: false,
+      message: "keyConditionExpression is required",
+    };
+  }
+
+  // Check for empty ExpressionAttributeValues
+  if (params.expressionAttributeValues && Object.keys(params.expressionAttributeValues).length === 0) {
+    return {
+      success: false,
+      message: "ValidationException: ExpressionAttributeValues must not be empty",
+    };
+  }
+
   if (!dynamoClient) {
     return {
       success: false,
-      message:
-        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
+      message: "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
 
   try {
+    // Build query parameters step by step
     const queryParams: any = {
       TableName: params.tableName,
       KeyConditionExpression: params.keyConditionExpression,
     };
 
+    // Add expression attribute values - REQUIRED for key condition
     if (params.expressionAttributeValues) {
-      queryParams.ExpressionAttributeValues = marshall(
-        params.expressionAttributeValues
-      );
+      queryParams.ExpressionAttributeValues = marshall(params.expressionAttributeValues);
+    } else {
+      return {
+        success: false,
+        message: "expressionAttributeValues is required for query operations",
+      };
     }
 
-    if (
-      params.expressionAttributeNames &&
-      Object.keys(params.expressionAttributeNames).length > 0
-    ) {
+    // Add expression attribute names - only if provided and not empty
+    if (params.expressionAttributeNames && Object.keys(params.expressionAttributeNames).length > 0) {
       queryParams.ExpressionAttributeNames = params.expressionAttributeNames;
     }
 
+    // Add filter expression - only if provided
     if (params.filterExpression) {
       queryParams.FilterExpression = params.filterExpression;
     }
 
-    if (params.limit) {
+    // Add limit - only if provided
+    if (params.limit && params.limit > 0) {
       queryParams.Limit = params.limit;
     }
 
+    // Add index name - only if provided
     if (params.indexName) {
       queryParams.IndexName = params.indexName;
+    }
+
+    // Add projection expression - only if provided
+    if (params.projectionExpression) {
+      queryParams.ProjectionExpression = params.projectionExpression;
+    }
+
+    // Add scan index forward - only if provided
+    if (params.scanIndexForward !== undefined) {
+      queryParams.ScanIndexForward = params.scanIndexForward;
+    }
+
+    // Add exclusive start key for pagination - only if provided
+    if (params.exclusiveStartKey) {
+      queryParams.ExclusiveStartKey = marshall(params.exclusiveStartKey);
     }
 
     const command = new QueryCommand(queryParams);
 
     const response = await dynamoClient.send(command);
-    return {
+    
+    // Build comprehensive response
+    const result: any = {
       success: true,
       message: `Query executed successfully on table ${params.tableName}`,
-      items: response.Items
-        ? response.Items.map((item) => unmarshall(item))
-        : [],
-      count: response.Count,
-      scannedCount: response.ScannedCount,
+      items: response.Items ? response.Items.map((item) => unmarshall(item)) : [],
+      count: response.Count || 0,
+      scannedCount: response.ScannedCount || 0,
     };
+
+    // Add pagination info if available
+    if (response.LastEvaluatedKey) {
+      result.lastEvaluatedKey = unmarshall(response.LastEvaluatedKey);
+      result.hasMoreItems = true;
+    } else {
+      result.hasMoreItems = false;
+    }
+
+    // Add capacity information if available
+    if (response.ConsumedCapacity) {
+      result.consumedCapacity = response.ConsumedCapacity;
+    }
+
+    // Add query metadata
+    result.queryMetadata = {
+      tableName: params.tableName,
+      indexName: params.indexName || "primary",
+      keyConditionExpression: params.keyConditionExpression,
+      filterExpression: params.filterExpression || null,
+      limit: params.limit || null,
+      scanIndexForward: params.scanIndexForward !== undefined ? params.scanIndexForward : true,
+    };
+
+    return result;
   } catch (error) {
     console.error("Error querying table:", error);
     return {
       success: false,
       message: `Failed to query table: ${error}`,
+      error: error instanceof Error ? error.message : String(error),
+      queryMetadata: {
+        tableName: params.tableName,
+        indexName: params.indexName || "primary",
+        keyConditionExpression: params.keyConditionExpression,
+      },
     };
   }
 }
 
 async function scanTable(params: any) {
+  // Validate parameters before AWS operations
+  if (!params.tableName) {
+    return {
+      success: false,
+      message: "tableName is required",
+    };
+  }
+
+  // Check for empty ExpressionAttributeValues
+  if (params.expressionAttributeValues && Object.keys(params.expressionAttributeValues).length === 0) {
+    return {
+      success: false,
+      message: "ValidationException: ExpressionAttributeValues must not be empty",
+    };
+  }
+
   if (!dynamoClient) {
     return {
       success: false,
-      message:
-        "AWS DynamoDB client not initialized. Please provide AWS credentials.",
+      message: "AWS DynamoDB client not initialized. Please provide AWS credentials.",
     };
   }
 
   try {
+    // Build scan parameters step by step
     const scanParams: any = {
       TableName: params.tableName,
     };
 
+    // Add filter expression - only if provided
     if (params.filterExpression) {
       scanParams.FilterExpression = params.filterExpression;
     }
 
+    // Add expression attribute values - only if provided and not empty
     if (params.expressionAttributeValues) {
-      scanParams.ExpressionAttributeValues = marshall(
-        params.expressionAttributeValues
-      );
+      scanParams.ExpressionAttributeValues = marshall(params.expressionAttributeValues);
     }
 
-    if (
-      params.expressionAttributeNames &&
-      Object.keys(params.expressionAttributeNames).length > 0
-    ) {
+    // Add expression attribute names - only if provided and not empty
+    if (params.expressionAttributeNames && Object.keys(params.expressionAttributeNames).length > 0) {
       scanParams.ExpressionAttributeNames = params.expressionAttributeNames;
     }
 
-    if (params.limit) {
+    // Add limit - only if provided and positive
+    if (params.limit && params.limit > 0) {
       scanParams.Limit = params.limit;
     }
 
+    // Add index name - only if provided
     if (params.indexName) {
       scanParams.IndexName = params.indexName;
+    }
+
+    // Add projection expression - only if provided
+    if (params.projectionExpression) {
+      scanParams.ProjectionExpression = params.projectionExpression;
+    }
+
+    // Add select parameter - only if provided
+    if (params.select) {
+      scanParams.Select = params.select;
+    }
+
+    // Add segment and total segments for parallel scans - only if provided
+    if (params.segment !== undefined && params.totalSegments !== undefined) {
+      scanParams.Segment = params.segment;
+      scanParams.TotalSegments = params.totalSegments;
+    }
+
+    // Add exclusive start key for pagination - only if provided
+    if (params.exclusiveStartKey) {
+      scanParams.ExclusiveStartKey = marshall(params.exclusiveStartKey);
+    }
+
+    // Add consistent read - only if provided
+    if (params.consistentRead !== undefined) {
+      scanParams.ConsistentRead = params.consistentRead;
+    }
+
+    // Add return consumed capacity - only if provided
+    if (params.returnConsumedCapacity) {
+      scanParams.ReturnConsumedCapacity = params.returnConsumedCapacity;
     }
 
     const command = new ScanCommand(scanParams);
 
     const response = await dynamoClient.send(command);
-    return {
+    
+    // Build comprehensive response
+    const result: any = {
       success: true,
       message: `Scan executed successfully on table ${params.tableName}`,
-      items: response.Items
-        ? response.Items.map((item) => unmarshall(item))
-        : [],
-      count: response.Count,
-      scannedCount: response.ScannedCount,
+      items: response.Items ? response.Items.map((item) => unmarshall(item)) : [],
+      count: response.Count || 0,
+      scannedCount: response.ScannedCount || 0,
     };
+
+    // Add pagination info if available
+    if (response.LastEvaluatedKey) {
+      result.lastEvaluatedKey = unmarshall(response.LastEvaluatedKey);
+      result.hasMoreItems = true;
+    } else {
+      result.hasMoreItems = false;
+    }
+
+    // Add capacity information if available
+    if (response.ConsumedCapacity) {
+      result.consumedCapacity = response.ConsumedCapacity;
+    }
+
+    // Add scan metadata
+    result.scanMetadata = {
+      tableName: params.tableName,
+      indexName: params.indexName || "primary",
+      filterExpression: params.filterExpression || null,
+      limit: params.limit || null,
+      segment: params.segment || null,
+      totalSegments: params.totalSegments || null,
+      consistentRead: params.consistentRead || false,
+      select: params.select || null,
+    };
+
+    return result;
   } catch (error) {
     console.error("Error scanning table:", error);
     return {
       success: false,
       message: `Failed to scan table: ${error}`,
+      error: error instanceof Error ? error.message : String(error),
+      scanMetadata: {
+        tableName: params.tableName,
+        indexName: params.indexName || "primary",
+        filterExpression: params.filterExpression || null,
+      },
     };
   }
 }
@@ -1360,6 +1541,137 @@ async function findUserByEmail(
   }
 }
 
+// Simple user analytics functions
+async function getUserMessageStatsSimple(params: {
+  userId: string;
+  days?: number;
+}) {
+  try {
+    if (!dynamoClient) {
+      return { success: false, message: "DynamoDB client not initialized" };
+    }
+
+    const days = params.days || 7;
+
+    const queryParams: any = {
+      TableName: "UpConversationMessage-upwagmitec",
+      IndexName: "userIdIndex",
+      KeyConditionExpression: "userId = :userId",
+      ExpressionAttributeValues: marshall({
+        ":userId": params.userId,
+      }),
+      Limit: 1000,
+    };
+
+    const command = new QueryCommand(queryParams);
+    const response = await dynamoClient.send(command);
+    const items = response.Items
+      ? response.Items.map((item) => unmarshall(item))
+      : [];
+
+    const stats = {
+      totalMessages: items.length,
+      userMessages: items.filter((m) => m.role === "user").length,
+      assistantMessages: items.filter((m) => m.role === "assistant").length,
+      widgetMessages: items.filter((m) => m.type === "widget").length,
+      recentMessages: items.slice(0, 10),
+    };
+
+    return {
+      success: true,
+      message: `Message statistics for user ${params.userId} (${items.length} total messages)`,
+      stats,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: `Failed to get message stats: ${error.message}`,
+    };
+  }
+}
+
+async function getUserConversationStatsSimple(params: {
+  userId: string;
+  days?: number;
+}) {
+  try {
+    if (!dynamoClient) {
+      return { success: false, message: "DynamoDB client not initialized" };
+    }
+
+    const queryParams: any = {
+      TableName: "UpConversations-upwagmitec",
+      KeyConditionExpression: "userId = :userId",
+      ExpressionAttributeValues: marshall({
+        ":userId": params.userId,
+      }),
+      Limit: 1000,
+    };
+
+    const command = new QueryCommand(queryParams);
+    const response = await dynamoClient.send(command);
+    const items = response.Items
+      ? response.Items.map((item) => unmarshall(item))
+      : [];
+
+    const stats = {
+      totalConversations: items.length,
+      recentConversations: items.slice(0, 10),
+      assistantTypes: {},
+    };
+
+    return {
+      success: true,
+      message: `Conversation statistics for user ${params.userId} (${items.length} total conversations)`,
+      stats,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: `Failed to get conversation stats: ${error.message}`,
+    };
+  }
+}
+
+async function getUserWeeklyActivitySimple(params: {
+  userId: string;
+  startDate?: string;
+  endDate?: string;
+}) {
+  try {
+    const messageStats = await getUserMessageStatsSimple({
+      userId: params.userId,
+    });
+    const conversationStats = await getUserConversationStatsSimple({
+      userId: params.userId,
+    });
+
+    return {
+      success: true,
+      message: `Weekly activity for user ${params.userId}`,
+      activity: {
+        messages: messageStats.success ? messageStats.stats : null,
+        conversations: conversationStats.success
+          ? conversationStats.stats
+          : null,
+        summary: {
+          totalMessages: messageStats.success
+            ? messageStats.stats?.totalMessages || 0
+            : 0,
+          totalConversations: conversationStats.success
+            ? conversationStats.stats?.totalConversations || 0
+            : 0,
+        },
+      },
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: `Failed to get weekly activity: ${error.message}`,
+    };
+  }
+}
+
 // Server setup
 const server = new Server(
   {
@@ -1429,6 +1741,7 @@ const PROMPTS: Prompt[] = [
 // Request handlers
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
+    VERSION_TOOL,
     CREATE_TABLE_TOOL,
     UPDATE_CAPACITY_TOOL,
     PUT_ITEM_TOOL,
@@ -1445,7 +1758,57 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     SEARCH_ASSISTANTS_BY_NAME_TOOL,
     UPASSISTANT_PUT_ITEM_TOOL,
     FIND_USER_BY_EMAIL_TOOL,
-    ...neo4jActionTools,
+    {
+      name: "get_user_message_stats",
+      description: "Gets comprehensive message statistics for a user",
+      inputSchema: {
+        type: "object",
+        properties: {
+          userId: { type: "string", description: "User ID to analyze" },
+          days: {
+            type: "number",
+            description: "Number of days to analyze (default: 7)",
+          },
+        },
+        required: ["userId"],
+      },
+    },
+    {
+      name: "get_user_conversation_stats",
+      description: "Gets comprehensive conversation statistics for a user",
+      inputSchema: {
+        type: "object",
+        properties: {
+          userId: { type: "string", description: "User ID to analyze" },
+          days: {
+            type: "number",
+            description: "Number of days to analyze (default: 7)",
+          },
+        },
+        required: ["userId"],
+      },
+    },
+    {
+      name: "get_user_weekly_activity",
+      description:
+        "Gets user's complete weekly activity report with messages and conversations",
+      inputSchema: {
+        type: "object",
+        properties: {
+          userId: { type: "string", description: "User ID to analyze" },
+          startDate: {
+            type: "string",
+            description: "Start date (YYYY-MM-DD format)",
+          },
+          endDate: {
+            type: "string",
+            description: "End date (YYYY-MM-DD format)",
+          },
+        },
+        required: ["userId"],
+      },
+    },
+    // Neo4j action tools removed
   ],
 }));
 
@@ -1563,330 +1926,81 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
 
     switch (name) {
+      case "get_version":
+        result = {
+          success: true,
+          version: "v0.2.1",
+          description: "DynamoDB MCP Server - Enhanced validation, rewritten scan tool with advanced features",
+          features: [
+            "DynamoDB operations (query, scan, get, put, update)",
+            "Cognito user management",
+            "Environment-aware table naming",
+            "Enhanced query and scan tools with comprehensive validation",
+            "Parallel scanning and advanced pagination support",
+            "Robust error handling with ValidationException detection",
+            "Complete metadata responses for all operations",
+            "No external dependencies"
+          ]
+        };
+        break;
       case "create_table":
         result = await createTable(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "table_management",
-            actionName: "create_table",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "list_tables":
         result = await listTables(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "table_management",
-            actionName: "list_tables",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "create_gsi":
         result = await createGSI(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "index_management",
-            actionName: "create_gsi",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "update_gsi":
         result = await updateGSI(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "index_management",
-            actionName: "update_gsi",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "create_lsi":
         result = await createLSI(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "index_management",
-            actionName: "create_lsi",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "update_item":
         result = await updateItem(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "data_operation",
-            actionName: "update_item",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "update_capacity":
         result = await updateCapacity(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "capacity_management",
-            actionName: "update_capacity",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "put_item":
         result = await putItem(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "data_operation",
-            actionName: "put_item",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "get_item":
         result = await getItem(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "data_operation",
-            actionName: "get_item",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "query_table":
         result = await queryTable(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "data_operation",
-            actionName: "query_table",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "scan_table":
         result = await scanTable(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "data_operation",
-            actionName: "scan_table",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "describe_table":
         result = await describeTable(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "table_management",
-            actionName: "describe_table",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "get_assistant_by_id":
         result = await getAssistantById(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "assistant_management",
-            actionName: "get_assistant_by_id",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "search_assistants_by_name":
         result = await searchAssistantsByName(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "assistant_management",
-            actionName: "search_assistants_by_name",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "upassistant_put_item":
         result = await upAssistantPutItem(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "DynamoDB",
-            mcpName: "AWS DynamoDB",
-            actionType: "assistant_management",
-            actionName: "upassistant_put_item",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
       case "find_user_by_email":
         result = await findUserByEmail(validatedArgs as any);
-        await actionTracker
-          .recordAction({
-            userId: userInfo.userId,
-            userName: userInfo.userName,
-            mcpId: "dynamodb-mcp-server",
-            mcpType: "Cognito",
-            mcpName: "AWS Cognito",
-            actionType: "user_lookup",
-            actionName: "find_user_by_email",
-            parameters: validatedArgs,
-            result,
-            status: result.success ? "success" : "failure",
-          })
-          .catch((error) => {
-            console.error("Error recording action:", error);
-          });
         break;
-      case "get_similar_actions":
-        result = await actionTracker.findSimilarActions(validatedArgs as any);
+      case "get_user_message_stats":
+        result = await getUserMessageStatsSimple(validatedArgs as any);
         break;
-      case "get_user_history":
-        result = await actionTracker.getUserActionHistory(
-          String(validatedArgs.userId),
-          validatedArgs.limit !== undefined
-            ? Number(validatedArgs.limit)
-            : undefined
-        );
+      case "get_user_conversation_stats":
+        result = await getUserConversationStatsSimple(validatedArgs as any);
         break;
-      case "suggest_next_action":
-        result = await actionTracker.suggestNextAction(validatedArgs as any);
+      case "get_user_weekly_activity":
+        result = await getUserWeeklyActivitySimple(validatedArgs as any);
         break;
-      case "get_action_recommendations":
-        result = await actionTracker.getActionRecommendations(
-          String(validatedArgs.userId),
-          String(validatedArgs.context)
-        );
-        break;
+      // Neo4j action cases removed
       default:
         return {
           content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -1908,8 +2022,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // Server startup
 async function runServer() {
   try {
-    // Try to connect to Neo4j (optional)
-    await actionTracker.connect();
+    // Neo4j connection removed
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
