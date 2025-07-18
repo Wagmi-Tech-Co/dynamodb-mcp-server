@@ -972,8 +972,11 @@ async function queryTable(params: any) {
     const queryParams: any = {
       TableName: params.tableName,
       KeyConditionExpression: params.keyConditionExpression,
-      ExpressionAttributeValues: marshall(params.expressionAttributeValues),
     };
+
+    if (params.expressionAttributeValues && Object.keys(params.expressionAttributeValues).length > 0) {
+      queryParams.ExpressionAttributeValues = marshall(params.expressionAttributeValues);
+    }
 
     if (params.expressionAttributeNames && Object.keys(params.expressionAttributeNames).length > 0) {
       queryParams.ExpressionAttributeNames = params.expressionAttributeNames;
